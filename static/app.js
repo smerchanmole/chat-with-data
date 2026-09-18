@@ -6,7 +6,7 @@ const state = {
   tables: ['sales', 'stores'], profiles: [], step: 0,
   cmlAuth: { baseUrl:'', projectId:'', apiKeyId:'', apiKeyValue:'' },
   modules: { summary: true, table: true, map: true, chart: true, sql: true },
-  model: { endpoint: '', model: 'default', auth_type: 'cdp', token: '', api_key_id: '', api_key_value: '' },
+  model: { endpoint: '', model: '', auth_type: 'cdp', token: '', api_key_id: '', api_key_value: '' },
   uiLanguage: localStorage.getItem('ttd-language') || 'es', modelLanguage: 'es',
 };
 
@@ -225,7 +225,7 @@ function bindEvents() {
   $('#database-select').addEventListener('change',async event=>{state.database=event.target.value;state.tables=[];state.profiles=[];try{await loadTables();}catch(error){toast(error.message,true)}});
   $('#toggle-all').addEventListener('click',()=>{const inputs=$$('#table-picker input');const select=!inputs.every(input=>input.checked);inputs.forEach(input=>input.checked=select);syncTableSelection()}); $('#profile-button').addEventListener('click',()=>profileTables());
   $('#auth-type').addEventListener('change',event=>{$('#token-fields').hidden=event.target.value==='apikey';$('#apikey-fields').hidden=event.target.value!=='apikey'});
-  $('#test-model').addEventListener('click',async()=>{syncModel();const status=$('#model-status');status.textContent='Comprobando…';try{const result=await api('/api/test-model',{method:'POST',body:JSON.stringify(state.model)});status.textContent=`Conectado · ${result.latency_ms} ms`;status.className='inline-status success'}catch(error){status.textContent=error.message;status.className='inline-status error'}});
+  $('#test-model').addEventListener('click',async()=>{syncModel();const status=$('#model-status');status.textContent='Comprobando…';try{const result=await api('/api/test-model',{method:'POST',body:JSON.stringify(state.model)});state.model.model=result.model;$('#model-name').value=result.model;$('#model-endpoint').value=result.endpoint;status.textContent=`Conectado · ${result.model} · ${result.latency_ms} ms`;status.className='inline-status success'}catch(error){status.textContent=error.message;status.className='inline-status error'}});
   $$('#module-picker input').forEach(input=>input.addEventListener('change',()=>{state.modules[input.dataset.module]=input.checked;syncContext()}));
   $('#ui-language').value=state.uiLanguage; $('#ui-language').addEventListener('change',event=>{state.uiLanguage=event.target.value;applyLanguage()}); $('#model-language').addEventListener('change',event=>state.modelLanguage=event.target.value);
   $('#save-settings').addEventListener('click',event=>{event.preventDefault();syncModel();syncContext();$('#settings-dialog').close();toast('Configuración guardada para esta sesión.')});
@@ -235,7 +235,7 @@ function bindEvents() {
   $('#mic-button').addEventListener('click',toggleSpeech);
 }
 
-function syncModel(){state.model={endpoint:$('#model-endpoint').value.trim(),model:$('#model-name').value.trim()||'default',auth_type:$('#auth-type').value,token:$('#model-token').value,api_key_id:$('#api-key-id').value,api_key_value:$('#api-key-value').value}}
+function syncModel(){state.model={endpoint:$('#model-endpoint').value.trim(),model:$('#model-name').value.trim(),auth_type:$('#auth-type').value,token:$('#model-token').value,api_key_id:$('#api-key-id').value,api_key_value:$('#api-key-value').value}}
 
 async function discoverCmlConnections(){
   state.cmlAuth={baseUrl:$('#cml-base-url').value.trim(),projectId:$('#cml-project-id').value.trim(),apiKeyId:$('#cml-api-key-id').value.trim(),apiKeyValue:$('#cml-api-key-value').value};

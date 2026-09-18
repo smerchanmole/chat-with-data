@@ -170,8 +170,13 @@ def clear_history():
 def test_model():
     config = request.get_json(force=True)
     started = time.perf_counter()
-    text = llm.complete(config, [{"role": "user", "content": "Reply only with: CONNECTED"}])
-    return ok({"message": text.strip(), "latency_ms": round((time.perf_counter() - started) * 1000)})
+    endpoint, model, _ = llm.resolve(config)
+    effective = {**config, "endpoint": endpoint, "model": model}
+    text = llm.complete(effective, [{"role": "user", "content": "Reply only with: CONNECTED"}])
+    return ok({
+        "message": text.strip(), "model": model, "endpoint": endpoint,
+        "latency_ms": round((time.perf_counter() - started) * 1000),
+    })
 
 
 @app.post("/api/ask")

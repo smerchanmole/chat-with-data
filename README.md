@@ -67,6 +67,8 @@ Configura un endpoint compatible con `/chat/completions`, el identificador del m
 - JWT token: cabecera `Authorization: Bearer …`
 - API Key ID + value: cabeceras `X-API-Key-ID` y `X-API-Key`
 
+Puedes pegar tanto la raíz del Model Endpoint de Cloudera como la URL completa terminada en `/v1/chat/completions`. Si dejas **Model ID** vacío, la aplicación consulta `/v1/models` y utiliza el identificador publicado por NIM, por ejemplo `nvidia/nemotron-3-nano`. No se utiliza el valor genérico `default`.
+
 El prompt contiene solo los perfiles de las tablas seleccionadas y las seis interacciones más recientes. El SQL se valida de nuevo en el servidor y se limita a 500 filas antes de ejecutarse.
 
 ## Seguridad y comportamiento

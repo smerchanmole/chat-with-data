@@ -100,7 +100,7 @@
           <div id="profile-status" class="inline-status"></div>
         </section>
         <section class="settings-step" data-step-panel="model">
-          <div class="field-row"><label class="wide">Endpoint compatible con OpenAI<input id="model-endpoint" type="url" placeholder="https://model-endpoint.example.com/v1"></label><label>Nombre del modelo<input id="model-name" placeholder="modelo-desplegado" value="default"></label></div>
+          <div class="field-row"><label class="wide">Endpoint compatible con OpenAI<input id="model-endpoint" type="url" placeholder="https://…/endpoints/modelo o …/v1/chat/completions"></label><label>Model ID <span>(vacío = autodetectar)</span><input id="model-name" placeholder="nvidia/nemotron-3-nano"></label></div>
           <label>Método de autenticación<select id="auth-type"><option value="cdp">CDP token</option><option value="jwt">JWT token</option><option value="apikey">API Key ID + value</option></select></label>
           <div id="token-fields"><label>Token<input id="model-token" type="password" autocomplete="off" placeholder="Pega el token de acceso"></label></div>
           <div id="apikey-fields" class="field-row" hidden><label>API Key ID<input id="api-key-id" autocomplete="off"></label><label>API Key value<input id="api-key-value" type="password" autocomplete="off"></label></div>

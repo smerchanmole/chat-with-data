@@ -6,6 +6,7 @@ from app import (
     app,
     catalog,
     install_missing_dependencies,
+    llm,
     resolve_base_dir,
     resolve_bindings,
 )
@@ -105,6 +106,25 @@ class TalkToDataTests(unittest.TestCase):
         self.assertEqual(connections[0]["engine"], "impala")
         self.assertEqual(get.call_args_list[1].args[0], "https://workbench.example/api/v2/projects/project-123/data-connections")
         self.assertEqual(get.call_args_list[1].kwargs["headers"]["Authorization"], "Bearer secret-value")
+
+    def test_cloudera_model_id_is_discovered(self):
+        models_response = Mock(status_code=200)
+        models_response.json.return_value = {"data": [{"id": "nvidia/nemotron-3-nano"}]}
+        chat_response = Mock(status_code=200)
+        chat_response.json.return_value = {"choices": [{"message": {"content": "CONNECTED"}}]}
+        endpoint = "https://ml.example/namespaces/serving-default/endpoints/nemotron"
+        config = {"endpoint": endpoint, "model": "", "auth_type": "cdp", "token": "token"}
+        with patch("llm_client.requests.get", return_value=models_response) as get:
+            with patch("llm_client.requests.post", return_value=chat_response) as post:
+                result = llm.complete(config, [{"role": "user", "content": "test"}])
+        self.assertEqual(result, "CONNECTED")
+        self.assertEqual(get.call_args.args[0], endpoint + "/v1/models")
+        self.assertEqual(post.call_args.args[0], endpoint + "/v1/chat/completions")
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "nvidia/nemotron-3-nano")
+
+    def test_singular_chat_completion_url_is_corrected(self):
+        endpoint = "https://ml.example/endpoints/model/v1/chat/completion"
+        self.assertEqual(llm.normalize_endpoint(endpoint), endpoint + "s")
 
 
 if __name__ == "__main__":
