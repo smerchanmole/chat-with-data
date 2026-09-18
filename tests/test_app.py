@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from app import app, catalog, resolve_bindings
+from app import DEPENDENCIES, app, catalog, install_missing_dependencies, resolve_bindings
 
 
 class TalkToDataTests(unittest.TestCase):
@@ -49,6 +50,15 @@ class TalkToDataTests(unittest.TestCase):
             resolve_bindings({"CDSW_READONLY_PORT": "8101"}),
             [("127.0.0.1", 8101)],
         )
+
+    def test_missing_dependencies_are_installed_with_current_python(self):
+        missing_module = next(iter(DEPENDENCIES))
+        with patch("app.importlib.util.find_spec", side_effect=lambda module: None if module == missing_module else object()):
+            with patch("app.subprocess.check_call") as installer:
+                install_missing_dependencies()
+        command = installer.call_args.args[0]
+        self.assertEqual(command[:4], [__import__("sys").executable, "-m", "pip", "install"])
+        self.assertIn(DEPENDENCIES[missing_module], command)
 
 
 if __name__ == "__main__":

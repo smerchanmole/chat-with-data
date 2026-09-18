@@ -7,12 +7,11 @@ Aplicación web Flask para conversar con datos mediante un modelo LLM. Descubre 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
 export FLASK_SECRET_KEY="cambia-esta-clave"
-./start.sh
+python app.py
 ```
 
-Cuando se ejecuta localmente, abre `http://127.0.0.1:8091`. La aplicación arranca con una fuente demo y no necesita un LLM para las tres preguntas sugeridas.
+`app.py` detecta e instala mediante `pip` las dependencias que falten antes de importar Flask. Cuando se ejecuta localmente, abre `http://127.0.0.1:8091`. La aplicación arranca con una fuente demo y no necesita un LLM para las tres preguntas sugeridas.
 
 ### Puertos locales y Cloudera CML
 
@@ -23,7 +22,7 @@ El servidor siempre enlaza exclusivamente con `127.0.0.1`:
 - En local, cuando ninguna de esas variables existe, utiliza el puerto fijo `8091`.
 - Siempre se inicia un único listener.
 
-No es necesario definir una variable `PORT` ni modificar `start.sh` entre ambos entornos.
+No es necesario definir una variable `PORT` ni utilizar un script de shell entre ambos entornos. En una aplicación de Cloudera basta con indicar `app.py` como fichero de ejecución.
 
 ## Conexiones CML: Impala, Hive y Trino
 

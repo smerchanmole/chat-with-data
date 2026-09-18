@@ -1,5 +1,33 @@
 from __future__ import annotations
 
+import importlib.util
+import subprocess
+import sys
+
+
+# Cloudera AI Workbench applications are launched from this Python file. Install
+# the portable dependencies before importing any of them, so no shell launcher
+# or separate requirements file is needed. CML provides cml.data_v1 itself.
+DEPENDENCIES = {
+    "flask": "Flask>=3.0,<4",
+    "requests": "requests>=2.31,<3",
+    "pandas": "pandas>=2.0,<3",
+    "trino": "trino>=0.333,<1",
+}
+
+
+def install_missing_dependencies():
+    missing = [package for module, package in DEPENDENCIES.items() if importlib.util.find_spec(module) is None]
+    if not missing:
+        return
+    print("Instalando dependencias de Talk to Data: " + ", ".join(missing), flush=True)
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *missing]
+    )
+
+
+install_missing_dependencies()
+
 import json
 import os
 import re
