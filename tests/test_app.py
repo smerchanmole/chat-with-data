@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import patch
 
-from app import DEPENDENCIES, app, catalog, install_missing_dependencies, resolve_bindings
+from app import (
+    DEPENDENCIES,
+    app,
+    catalog,
+    install_missing_dependencies,
+    resolve_base_dir,
+    resolve_bindings,
+)
 
 
 class TalkToDataTests(unittest.TestCase):
@@ -59,6 +66,13 @@ class TalkToDataTests(unittest.TestCase):
         command = installer.call_args.args[0]
         self.assertEqual(command[:4], [__import__("sys").executable, "-m", "pip", "install"])
         self.assertIn(DEPENDENCIES[missing_module], command)
+
+    def test_base_directory_with_and_without_dunder_file(self):
+        self.assertEqual(resolve_base_dir("/opt/app/app.py"), __import__("pathlib").Path("/opt/app"))
+        self.assertEqual(
+            resolve_base_dir(None, "/home/cdsw/project"),
+            __import__("pathlib").Path("/home/cdsw/project").resolve(),
+        )
 
 
 if __name__ == "__main__":

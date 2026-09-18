@@ -13,6 +13,8 @@ python app.py
 
 `app.py` detecta e instala mediante `pip` las dependencias que falten antes de importar Flask. Cuando se ejecuta localmente, abre `http://127.0.0.1:8091`. La aplicación arranca con una fuente demo y no necesita un LLM para las tres preguntas sugeridas.
 
+La resolución de recursos funciona tanto en la ejecución Python convencional como en el motor de aplicaciones de CML, donde `__file__` puede no estar definido. En ese caso se utiliza el directorio de trabajo del proyecto.
+
 ### Puertos locales y Cloudera CML
 
 El servidor siempre enlaza exclusivamente con `127.0.0.1`:

@@ -42,7 +42,15 @@ from werkzeug.serving import make_server
 from data_connector import DataCatalog
 from llm_client import LLMClient
 
-BASE_DIR = Path(__file__).resolve().parent
+
+def resolve_base_dir(file_name=None, working_directory=None):
+    """Support normal Python files and CML's notebook-style app runner."""
+    if file_name:
+        return Path(file_name).resolve().parent
+    return Path(working_directory or Path.cwd()).resolve()
+
+
+BASE_DIR = resolve_base_dir(globals().get("__file__"))
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "talk-to-data-dev-change-me")
 app.config.update(JSON_SORT_KEYS=False, MAX_CONTENT_LENGTH=1_000_000)
