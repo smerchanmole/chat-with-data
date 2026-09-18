@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from app import (
     DEPENDENCIES,
@@ -73,6 +73,38 @@ class TalkToDataTests(unittest.TestCase):
             resolve_base_dir(None, "/home/cdsw/project"),
             __import__("pathlib").Path("/home/cdsw/project").resolve(),
         )
+
+    def test_authenticated_cml_connection_discovery(self):
+        swagger = {
+            "paths": {
+                "/api/v2/projects/{project_id}/data-connections": {
+                    "get": {
+                        "operationId": "listDataConnections",
+                        "parameters": [
+                            {"name": "project_id", "in": "path", "required": True},
+                            {"name": "page_size", "in": "query"},
+                        ],
+                    }
+                }
+            }
+        }
+        swagger_response = Mock()
+        swagger_response.json.return_value = swagger
+        swagger_response.raise_for_status.return_value = None
+        list_response = Mock()
+        list_response.json.return_value = {
+            "data_connections": [
+                {"name": "warehouse-hive", "type": "CDW Hive"},
+                {"name": "analytics-impala", "connection_type": "Impala"},
+            ]
+        }
+        list_response.raise_for_status.return_value = None
+        with patch("data_connector.requests.get", side_effect=[swagger_response, list_response]) as get:
+            connections = catalog.discover_connections("https://workbench.example", "secret-value", "project-123")
+        self.assertEqual([item["name"] for item in connections], ["analytics-impala", "warehouse-hive"])
+        self.assertEqual(connections[0]["engine"], "impala")
+        self.assertEqual(get.call_args_list[1].args[0], "https://workbench.example/api/v2/projects/project-123/data-connections")
+        self.assertEqual(get.call_args_list[1].kwargs["headers"]["Authorization"], "Bearer secret-value")
 
 
 if __name__ == "__main__":

@@ -38,13 +38,16 @@ dataframe = conn.get_pandas_dataframe("SHOW DATABASES")
 conn.close()
 ```
 
-Declara las conexiones visibles en el selector mediante una variable, usando `nombre:motor`:
+Desde **Configuración → Fuente de datos → Identidad de Cloudera**, indica:
 
-```bash
-export CML_DATA_CONNECTIONS="vast-data-demo:impala,go01-optimizer:hive,mi-trino:trino"
-```
+- URL del Workbench.
+- Project ID (se completa desde `CDSW_PROJECT_ID` cuando CML lo publica).
+- API Key ID, únicamente como referencia visual.
+- API Key Value de API v2, que autentica las llamadas con `Authorization: Bearer`.
 
-Esto evita almacenar credenciales: CML resuelve cada conexión registrada. La app ejecuta `SHOW DATABASES`, `SHOW TABLES` y muestras limitadas sobre las tablas elegidas.
+La aplicación consulta el `swagger.json` del propio Workbench para localizar la operación de Data Connections compatible con esa versión, pagina la lista completa y muestra únicamente las conexiones visibles para el usuario dentro del proyecto. Después aplica temporalmente el API Key Value a `cmldata` antes de cada `get_connection`. El secreto permanece en memoria del navegador y no se guarda en disco, cookies, historial ni Git.
+
+`CML_DATA_CONNECTIONS=nombre:motor,...` sigue disponible como alternativa administrativa, pero ya no contiene valores predeterminados ni es el mecanismo principal de descubrimiento.
 
 ## Trino mediante JDBC URL
 
@@ -73,7 +76,7 @@ El prompt contiene solo los perfiles de las tablas seleccionadas y las seis inte
 - Las conexiones se cierran después de cada consulta.
 - El perfilado usa como máximo 100 filas y 12 tablas.
 - La memoria es temporal, se separa por cookie de sesión y conserva hasta 30 respuestas.
-- Los secretos del modelo y de Trino no se escriben en disco ni en `localStorage`.
+- Los secretos del modelo, Trino y Cloudera no se escriben en disco, cookies ni `localStorage`.
 
 ## Pruebas
 

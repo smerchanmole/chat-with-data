@@ -67,6 +67,17 @@ def selected_connection(payload):
     direct = payload.get("connection_spec") or {}
     if direct.get("engine") == "trino" and str(direct.get("jdbc_url", "")).startswith("jdbc:trino://"):
         return {"name": "direct-trino", "label": "Trino JDBC", "engine": "trino", **direct}
+    if direct.get("cml_registered"):
+        name = str(direct.get("name", ""))
+        if not re.fullmatch(r"[A-Za-z0-9_. -]{1,200}", name):
+            raise ValueError("El nombre de la conexión CML no es válido.")
+        return {
+            "name": name,
+            "label": str(direct.get("label") or name),
+            "engine": str(direct.get("engine") or "cml"),
+            "cml_registered": True,
+            "cdsw_api_key": str(direct.get("cdsw_api_key", "")),
+        }
     name = payload.get("connection")
     for item in catalog.connections():
         if item["name"] == name:
@@ -101,6 +112,28 @@ def favicon():
 @app.get("/api/connections")
 def connections():
     return ok(catalog.connections())
+
+
+@app.get("/api/cml-context")
+def cml_context():
+    domain = os.getenv("CDSW_DOMAIN", "")
+    if domain and not re.match(r"^https?://", domain, re.I):
+        domain = "https://" + domain
+    return ok({
+        "base_url": domain,
+        "project_id": os.getenv("CDSW_PROJECT_ID", ""),
+    })
+
+
+@app.post("/api/connections/discover")
+def discover_connections():
+    payload = request.get_json(force=True)
+    discovered = catalog.discover_connections(
+        str(payload.get("base_url", "")),
+        str(payload.get("api_key_value", "")),
+        str(payload.get("project_id", "")),
+    )
+    return ok(discovered)
 
 
 @app.post("/api/databases")

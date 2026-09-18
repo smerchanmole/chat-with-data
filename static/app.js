@@ -4,6 +4,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   connections: [], connection: 'talk-to-data-demo', connectionSpec: null, database: 'demo',
   tables: ['sales', 'stores'], profiles: [], step: 0,
+  cmlAuth: { baseUrl:'', projectId:'', apiKeyId:'', apiKeyValue:'' },
   modules: { summary: true, table: true, map: true, chart: true, sql: true },
   model: { endpoint: '', model: 'default', auth_type: 'cdp', token: '', api_key_id: '', api_key_value: '' },
   uiLanguage: localStorage.getItem('ttd-language') || 'es', modelLanguage: 'es',
@@ -24,8 +25,18 @@ async function api(path, options = {}) {
   return payload.data;
 }
 
-function connectionPayload() {
-  return state.connectionSpec ? { connection: 'direct-trino', connection_spec: state.connectionSpec } : { connection: state.connection };
+function activeConnectionPayload() {
+  if (state.connectionSpec) return { connection:'direct-trino', connection_spec:state.connectionSpec };
+  const selected = state.connections.find(item => item.name === state.connection);
+  if (selected?.cml_registered) {
+    return { connection:state.connection, connection_spec:{ ...selected, cdsw_api_key:state.cmlAuth.apiKeyValue } };
+  }
+  return { connection:state.connection };
+}
+
+function renderConnectionOptions() {
+  $('#connection-select').innerHTML = state.connections.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.label)} · ${escapeHtml(item.engine)}</option>`).join('');
+  $('#connection-select').value = state.connection;
 }
 
 function escapeHtml(value) {
@@ -47,9 +58,13 @@ function applyLanguage() {
 async function initialize() {
   applyLanguage();
   try {
-    state.connections = await api('/api/connections');
-    $('#connection-select').innerHTML = state.connections.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.label)} · ${escapeHtml(item.engine)}</option>`).join('');
-    $('#connection-select').value = state.connection;
+    const [connections, context] = await Promise.all([api('/api/connections'), api('/api/cml-context')]);
+    state.connections = connections;
+    state.cmlAuth.baseUrl = context.base_url || '';
+    state.cmlAuth.projectId = context.project_id || '';
+    $('#cml-base-url').value = state.cmlAuth.baseUrl;
+    $('#cml-project-id').value = state.cmlAuth.projectId;
+    renderConnectionOptions();
     await loadDatabases();
     $('#database-select').value = state.database;
     await loadTables(true);
@@ -61,7 +76,7 @@ async function initialize() {
 
 async function loadDatabases() {
   setDbStatus('Conectando…', false);
-  const databases = await api('/api/databases', { method:'POST', body:JSON.stringify(connectionPayload()) });
+  const databases = await api('/api/databases', { method:'POST', body:JSON.stringify(activeConnectionPayload()) });
   $('#database-select').innerHTML = databases.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('') || '<option value="">Sin esquemas disponibles</option>';
   if (!databases.includes(state.database)) state.database = databases[0] || '';
   $('#database-select').value = state.database;
@@ -70,7 +85,7 @@ async function loadDatabases() {
 
 async function loadTables(preserve = false) {
   if (!state.database) return;
-  const tables = await api('/api/tables', { method:'POST', body:JSON.stringify({ ...connectionPayload(), database:state.database }) });
+  const tables = await api('/api/tables', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database }) });
   if (!preserve) state.tables = [];
   state.tables = state.tables.filter(item => tables.includes(item));
   $('#table-picker').innerHTML = tables.map(name => `<label class="table-check"><input type="checkbox" value="${escapeHtml(name)}" ${state.tables.includes(name) ? 'checked' : ''}><b>${escapeHtml(name)}</b><span>tabla</span></label>`).join('') || '<p class="empty-state">No se encontraron tablas.</p>';
@@ -89,7 +104,7 @@ async function profileTables(silent = false) {
   if (!state.tables.length) { if (!silent) toast('Selecciona al menos una tabla.', true); return; }
   const button = $('#profile-button'); button.disabled = true; button.textContent = 'Analizando…';
   try {
-    state.profiles = await api('/api/profile', { method:'POST', body:JSON.stringify({ ...connectionPayload(), database:state.database, tables:state.tables }) });
+    state.profiles = await api('/api/profile', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables }) });
     const columns = state.profiles.reduce((sum, item) => sum + item.columns.length, 0);
     $('#profile-status').textContent = `Perfil listo · ${state.profiles.length} tablas · ${columns} columnas`; $('#profile-status').className = 'inline-status success';
     if (!silent) toast('Perfil de datos actualizado.');
@@ -121,7 +136,7 @@ async function ask(question) {
   $('#welcome')?.remove(); appendUser(question); $('#question').value = ''; resizeComposer();
   const typing = appendTyping(); $('#send-button').disabled = true;
   try {
-    const result = await api('/api/ask', { method:'POST', body:JSON.stringify({ ...connectionPayload(), database:state.database, tables:state.tables, profiles:state.profiles, modules:state.modules, model:state.model, model_language:state.modelLanguage, question }) });
+    const result = await api('/api/ask', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables, profiles:state.profiles, modules:state.modules, model:state.model, model_language:state.modelLanguage, question }) });
     typing.remove(); renderAnswer(result); await loadHistory();
   } catch (error) { typing.remove(); renderError(error.message); }
   finally { $('#send-button').disabled = false; $('#question').focus(); }
@@ -203,7 +218,8 @@ function showStep(index) {
 function bindEvents() {
   $$('[data-open-settings]').forEach(button=>button.addEventListener('click',openSettings)); $$('.step-link').forEach((button,index)=>button.addEventListener('click',()=>showStep(index)));
   $('#next-step').addEventListener('click',()=>showStep(state.step+1)); $('#previous-step').addEventListener('click',()=>showStep(state.step-1));
-  $('#connection-mode').addEventListener('change',event=>{const direct=event.target.value==='trino'; $('#trino-fields').hidden=!direct; $('#cml-connection-field').hidden=direct;});
+  $('#connection-mode').addEventListener('change',event=>{const direct=event.target.value==='trino'; $('#trino-fields').hidden=!direct; $('#cml-auth-fields').hidden=direct; $('#cml-connection-field').hidden=direct;});
+  $('#discover-cml').addEventListener('click',discoverCmlConnections);
   $('#connection-select').addEventListener('change',async event=>{state.connection=event.target.value;state.connectionSpec=null;state.database='';state.tables=[];state.profiles=[];try{await loadDatabases();await loadTables();}catch(error){toast(error.message,true)}});
   $('#connect-trino').addEventListener('click',async()=>{const url=$('#trino-url').value.trim();if(!url.startsWith('jdbc:trino://')){toast('La URL debe comenzar por jdbc:trino://',true);return}state.connectionSpec={engine:'trino',jdbc_url:url,username:$('#trino-user').value.trim(),password:$('#trino-password').value};state.database='';state.tables=[];state.profiles=[];try{await loadDatabases();await loadTables();toast('Conexión Trino disponible.')}catch(error){toast(error.message,true)}});
   $('#database-select').addEventListener('change',async event=>{state.database=event.target.value;state.tables=[];state.profiles=[];try{await loadTables();}catch(error){toast(error.message,true)}});
@@ -220,6 +236,18 @@ function bindEvents() {
 }
 
 function syncModel(){state.model={endpoint:$('#model-endpoint').value.trim(),model:$('#model-name').value.trim()||'default',auth_type:$('#auth-type').value,token:$('#model-token').value,api_key_id:$('#api-key-id').value,api_key_value:$('#api-key-value').value}}
+
+async function discoverCmlConnections(){
+  state.cmlAuth={baseUrl:$('#cml-base-url').value.trim(),projectId:$('#cml-project-id').value.trim(),apiKeyId:$('#cml-api-key-id').value.trim(),apiKeyValue:$('#cml-api-key-value').value};
+  const status=$('#cml-discovery-status');const button=$('#discover-cml');status.textContent='Consultando conexiones visibles…';status.className='inline-status';button.disabled=true;
+  try{
+    const discovered=await api('/api/connections/discover',{method:'POST',body:JSON.stringify({base_url:state.cmlAuth.baseUrl,project_id:state.cmlAuth.projectId,api_key_id:state.cmlAuth.apiKeyId,api_key_value:state.cmlAuth.apiKeyValue})});
+    const demo=state.connections.find(item=>item.demo)||{name:'talk-to-data-demo',engine:'sqlite',label:'Demo · Retail analytics',demo:true};
+    state.connections=[...discovered,demo];state.connection=discovered[0]?.name||demo.name;state.connectionSpec=null;state.database='';state.tables=[];state.profiles=[];renderConnectionOptions();
+    status.textContent=`${discovered.length} conexiones visibles para este usuario`;status.className='inline-status success';
+    if(discovered.length){await loadDatabases();await loadTables()}else{toast('El usuario no tiene conexiones disponibles en este proyecto.',true)}
+  }catch(error){status.textContent=error.message;status.className='inline-status error';toast(error.message,true)}finally{button.disabled=false}
+}
 async function newChat(){await api('/api/history',{method:'DELETE'});location.reload()}
 
 let recognition;
@@ -230,4 +258,3 @@ function toggleSpeech(){
 }
 
 bindEvents(); initialize();
-
