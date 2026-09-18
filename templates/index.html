@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <title>Talk to Data</title>
+  <link rel="stylesheet" href="/static/style.css?v=1">
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <div class="app-shell">
+    <aside class="sidebar glass">
+      <a class="brand" href="#" aria-label="Talk to Data, inicio">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><b>Talk to Data</b><small>Conversational analytics</small></span>
+      </a>
+      <button id="new-chat" class="new-chat"><span>＋</span><span data-i18n="new_chat">Nueva conversación</span></button>
+      <div class="nav-label" data-i18n="workspace">ESPACIO DE TRABAJO</div>
+      <nav class="main-nav">
+        <button class="nav-item active" data-view="chat"><span class="nav-icon">⌁</span><span data-i18n="chat">Conversación</span><i></i></button>
+        <button class="nav-item" data-open-settings><span class="nav-icon">⌘</span><span data-i18n="settings">Configuración</span></button>
+      </nav>
+      <div class="history-block">
+        <div class="nav-label"><span data-i18n="recent">RECIENTES</span><button id="clear-history" title="Borrar historial">×</button></div>
+        <div id="history-list" class="history-list"><p class="muted-small">Aún no hay preguntas</p></div>
+      </div>
+      <div class="sidebar-foot">
+        <div class="connection-mini"><span class="pulse"></span><div><small data-i18n="data_source">FUENTE DE DATOS</small><b id="mini-source">Demo · Retail</b></div></div>
+        <button class="avatar" data-open-settings aria-label="Abrir configuración">SM</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div><div class="crumb"><span data-i18n="workspace">Espacio de trabajo</span><b>/</b><strong data-i18n="analysis">Análisis</strong></div><h1 data-i18n="conversation">Conversación</h1></div>
+        <div class="top-actions">
+          <div id="source-pill" class="source-pill"><span class="pulse"></span><span>talk-to-data-demo</span><small>2 tablas</small></div>
+          <button class="icon-button" data-open-settings title="Configuración" aria-label="Configuración">⚙</button>
+        </div>
+      </header>
+
+      <section id="chat-stream" class="chat-stream" aria-live="polite">
+        <div id="welcome" class="welcome">
+          <div class="spark-logo"><span>✦</span></div>
+          <p class="eyebrow">AI DATA ASSISTANT</p>
+          <h2><span data-i18n="hello">Hola, soy tu analista.</span><br><em data-i18n="question_prompt">¿Qué quieres saber?</em></h2>
+          <p class="welcome-copy" data-i18n="welcome_copy">Pregunta en lenguaje natural. Prepararé la consulta, analizaré los resultados y elegiré la mejor forma de explicarlos.</p>
+          <div class="suggestion-grid">
+            <button class="suggestion" data-question="¿Cómo han evolucionado los ingresos por mes?"><span class="suggestion-icon coral">↗</span><span><b data-i18n="trend">Analiza una tendencia</b><small>¿Cómo han evolucionado los ingresos por mes?</small></span><span>→</span></button>
+            <button class="suggestion" data-question="Compara los ingresos por categoría"><span class="suggestion-icon violet">≋</span><span><b data-i18n="compare">Compara categorías</b><small>Compara los ingresos por categoría</small></span><span>→</span></button>
+            <button class="suggestion" data-question="Muéstrame las ventas por ciudad en un mapa"><span class="suggestion-icon cyan">⌖</span><span><b data-i18n="map_data">Sitúa los datos</b><small>Muéstrame las ventas por ciudad en un mapa</small></span><span>→</span></button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="composer-wrap">
+        <form id="ask-form" class="composer glass">
+          <textarea id="question" rows="1" maxlength="2000" placeholder="Pregunta algo sobre tus datos…" aria-label="Pregunta"></textarea>
+          <div class="composer-tools">
+            <div><button id="mic-button" type="button" class="tool-button" title="Dictar pregunta">◉</button><span id="mic-status"></span></div>
+            <div class="send-hint"><span><kbd>↵</kbd> enviar · <kbd>⇧↵</kbd> nueva línea</span><button id="send-button" type="submit" aria-label="Enviar pregunta">↑</button></div>
+          </div>
+        </form>
+        <p class="disclaimer" data-i18n="disclaimer">La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.</p>
+      </footer>
+    </main>
+
+    <aside class="context-panel glass">
+      <div class="context-head"><div><p class="eyebrow">CONTEXTO ACTIVO</p><h2 data-i18n="data_context">Contexto de datos</h2></div><button class="icon-button" data-open-settings>•••</button></div>
+      <div class="context-section"><p class="context-label" data-i18n="connection">CONEXIÓN</p><div class="context-card connection-card"><span class="db-icon">◫</span><div><b id="context-connection">talk-to-data-demo</b><small id="context-engine">SQLite · Conectado</small></div><span class="pulse"></span></div></div>
+      <div class="context-section"><div class="context-label row"><span data-i18n="selected_tables">TABLAS SELECCIONADAS</span><b id="table-count">2</b></div><div id="context-tables" class="table-list"></div><button class="text-button" data-open-settings>＋ <span data-i18n="manage_tables">Gestionar tablas</span></button></div>
+      <div class="context-section"><p class="context-label" data-i18n="answer_modules">MÓDULOS DE RESPUESTA</p><div id="active-modules" class="module-chips"></div></div>
+      <div class="context-note"><span>✦</span><p><b data-i18n="memory_on">Memoria activa</b><br><small data-i18n="memory_copy">Usaré las últimas preguntas para comprender referencias y comparaciones.</small></p></div>
+    </aside>
+  </div>
+
+  <dialog id="settings-dialog">
+    <form method="dialog" class="settings-shell">
+      <aside class="settings-nav">
+        <div><p class="eyebrow">WORKSPACE SETUP</p><h2 data-i18n="settings">Configuración</h2><p data-i18n="settings_copy">Conecta tus datos y define cómo quieres recibir las respuestas.</p></div>
+        <nav><button type="button" class="step-link active" data-step="data"><b>1</b><span><strong data-i18n="data_source">Fuente de datos</strong><small>Conexión, tablas y perfil</small></span></button><button type="button" class="step-link" data-step="model"><b>2</b><span><strong>Modelo LLM</strong><small>Endpoint y autenticación</small></span></button><button type="button" class="step-link" data-step="response"><b>3</b><span><strong data-i18n="answer">Respuesta</strong><small>Módulos e idiomas</small></span></button></nav>
+        <div class="secure-note">◆ <span><b>Conexión segura</b><small>Los secretos permanecen en esta sesión.</small></span></div>
+      </aside>
+      <div class="settings-content">
+        <header><div><p id="step-kicker" class="eyebrow">PASO 1 DE 3</p><h2 id="step-title">Conecta una fuente de datos</h2></div><button class="close-button" value="cancel" aria-label="Cerrar">×</button></header>
+        <section class="settings-step active" data-step-panel="data">
+          <div class="field-row"><label>Tipo de conexión<select id="connection-mode"><option value="cml">Conexión registrada en CML</option><option value="trino">Trino mediante JDBC URL</option></select></label><label id="cml-connection-field">Conexión<select id="connection-select"></select></label></div>
+          <div id="trino-fields" class="subpanel" hidden><label class="wide">JDBC URL<input id="trino-url" placeholder="jdbc:trino://warehouse.environment.dwx.company.com:443/catalog/schema"></label><div class="field-row"><label>Usuario<input id="trino-user" autocomplete="username" placeholder="usuario"></label><label>Contraseña <span>(opcional)</span><input id="trino-password" type="password" autocomplete="current-password"></label></div><button id="connect-trino" type="button" class="secondary-button">Conectar con Trino</button></div>
+          <div class="field-row"><label>Base de datos / esquema<select id="database-select"><option value="">Selecciona primero una conexión</option></select></label><div class="status-box"><span id="db-status-dot"></span><div><small>ESTADO</small><b id="db-status">Pendiente</b></div></div></div>
+          <div class="section-heading"><div><h3>Selecciona las tablas</h3><p>Solo estas tablas formarán parte del contexto del modelo.</p></div><button id="toggle-all" type="button" class="text-button">Seleccionar todas</button></div>
+          <div id="table-picker" class="table-picker"><p class="empty-state">Elige una base de datos para descubrir sus tablas.</p></div>
+          <div class="profile-strip"><span class="profile-icon">✦</span><div><b>Perfilado inteligente</b><p>Analizaremos tipos, valores nulos, cardinalidad y ejemplos de hasta 100 filas.</p></div><button id="profile-button" type="button" class="primary-button">Analizar selección</button></div>
+          <div id="profile-status" class="inline-status"></div>
+        </section>
+        <section class="settings-step" data-step-panel="model">
+          <div class="field-row"><label class="wide">Endpoint compatible con OpenAI<input id="model-endpoint" type="url" placeholder="https://model-endpoint.example.com/v1"></label><label>Nombre del modelo<input id="model-name" placeholder="modelo-desplegado" value="default"></label></div>
+          <label>Método de autenticación<select id="auth-type"><option value="cdp">CDP token</option><option value="jwt">JWT token</option><option value="apikey">API Key ID + value</option></select></label>
+          <div id="token-fields"><label>Token<input id="model-token" type="password" autocomplete="off" placeholder="Pega el token de acceso"></label></div>
+          <div id="apikey-fields" class="field-row" hidden><label>API Key ID<input id="api-key-id" autocomplete="off"></label><label>API Key value<input id="api-key-value" type="password" autocomplete="off"></label></div>
+          <div class="test-row"><button id="test-model" type="button" class="secondary-button">Probar conexión</button><span id="model-status" class="inline-status"></span></div>
+        </section>
+        <section class="settings-step" data-step-panel="response">
+          <div class="section-heading"><div><h3>Construye la respuesta</h3><p>Activa solo los módulos que sean útiles para tu equipo.</p></div></div>
+          <div id="module-picker" class="module-picker">
+            <label><input type="checkbox" data-module="summary" checked><span>✦</span><b>Resumen</b><small>Interpretación breve del resultado</small></label>
+            <label><input type="checkbox" data-module="table" checked><span>▦</span><b>Tabla</b><small>Filas y columnas navegables</small></label>
+            <label><input type="checkbox" data-module="map" checked><span>⌖</span><b>Mapa</b><small>Si existen latitud y longitud</small></label>
+            <label><input type="checkbox" data-module="chart" checked><span>↗</span><b>Gráficas</b><small>Visualización elegida por el modelo</small></label>
+            <label><input type="checkbox" data-module="sql" checked><span>⌁</span><b>Consulta SQL</b><small>Lista para copiar y reutilizar</small></label>
+          </div>
+          <div class="field-row language-row"><label>Idioma de la aplicación<select id="ui-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Idioma de las respuestas<select id="model-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label></div>
+        </section>
+        <footer><span id="save-status">Los cambios se guardan en esta sesión.</span><div><button type="button" id="previous-step" class="secondary-button" hidden>Anterior</button><button type="button" id="next-step" class="primary-button">Continuar</button><button value="save" id="save-settings" class="primary-button" hidden>Guardar configuración</button></div></footer>
+      </div>
+    </form>
+  </dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js?v=1"></script>
+</body>
+</html>

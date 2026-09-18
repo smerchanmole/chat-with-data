@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+runtime/*.db
+runtime/*.json
+.env
+.DS_Store
+
