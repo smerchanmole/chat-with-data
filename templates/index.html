@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07111f">
   <title>Talk to Data</title>
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <script>document.documentElement.dataset.theme=localStorage.getItem('ttd-theme')||'dark'</script>
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
@@ -90,14 +91,31 @@
             <textarea id="model-context" rows="6" maxlength="12000" placeholder="Después del profiling aparecerán aquí las tablas y columnas. Añade, por ejemplo: responde siempre en español; trata sale_date como DATE; responde de forma esquemática con puntos."></textarea>
             <small class="context-help">Este texto se enviará al modelo junto con el esquema estructurado y la memoria de la conversación.</small>
           </div>
-          <div class="field-row"><label>Tipo de conexión<select id="connection-mode"><option value="cml">Conexión registrada en CML</option><option value="trino">Trino mediante JDBC URL</option></select></label><label id="cml-connection-field">Conexión<select id="connection-select"></select></label></div>
-          <div id="cml-auth-fields" class="subpanel">
-            <div class="section-heading compact"><div><h3>Identidad de Cloudera</h3><p>Descubre las conexiones que el usuario puede ver en este proyecto.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
-            <div class="field-row"><label>URL del Workbench<input id="cml-base-url" type="url" placeholder="https://ml-workbench.example.com"></label><label>Project ID<input id="cml-project-id" autocomplete="off" placeholder="ID del proyecto actual"></label></div>
-            <div class="field-row"><label>API Key ID <span>(referencia opcional)</span><input id="cml-api-key-id" autocomplete="off" placeholder="Key ID"></label><label>API Key Value<input id="cml-api-key-value" type="password" autocomplete="new-password" placeholder="Valor secreto de API v2"></label></div>
-            <div class="test-row"><button id="discover-cml" type="button" class="primary-button">Descubrir conexiones</button><span id="cml-discovery-status" class="inline-status">El Value se usa como Bearer/API v2 key y no se guarda.</span></div>
+          <fieldset class="connector-picker">
+            <legend>Motor de datos</legend>
+            <label><input type="radio" name="connection-mode" value="postgresql" checked><span class="connector-mark">PG</span><span><b>PostgreSQL</b><small>URL y credenciales</small></span></label>
+            <label><input type="radio" name="connection-mode" value="cloudera"><span class="connector-mark">CDP</span><span><b>Cloudera</b><small>Conexión registrada</small></span></label>
+            <label><input type="radio" name="connection-mode" value="trino"><span class="connector-mark">TR</span><span><b>Trino</b><small>Virtual Warehouse</small></span></label>
+          </fieldset>
+          <div class="connection-route" aria-label="Ruta de conexión"><span class="active">1 · Motor</span><i></i><span class="active">2 · Credenciales</span><i></i><span>3 · Base de datos</span></div>
+          <div id="postgresql-fields" class="subpanel connector-fields">
+            <div class="section-heading compact"><div><h3>Conexión PostgreSQL</h3><p>Usaremos la base inicial para descubrir las demás bases accesibles.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
+            <label class="wide">URL del servidor<input id="postgres-url" inputmode="url" autocomplete="off" placeholder="postgresql://postgres.example.com:5432?sslmode=require"></label>
+            <div class="field-row"><label>Base de datos inicial<input id="postgres-database" autocomplete="off" placeholder="postgres"></label><label>Usuario<input id="postgres-user" autocomplete="username" placeholder="analyst"></label></div>
+            <label class="wide">Contraseña<input id="postgres-password" type="password" autocomplete="current-password" placeholder="Contraseña del usuario"></label>
           </div>
-          <div id="trino-fields" class="subpanel" hidden><label class="wide">JDBC URL<input id="trino-url" placeholder="jdbc:trino://warehouse.environment.dwx.company.com:443/catalog/schema"></label><div class="field-row"><label>Usuario<input id="trino-user" autocomplete="username" placeholder="usuario"></label><label>Contraseña <span>(opcional)</span><input id="trino-password" type="password" autocomplete="current-password"></label></div><button id="connect-trino" type="button" class="secondary-button">Conectar con Trino</button></div>
+          <div id="cloudera-fields" class="subpanel connector-fields" hidden>
+            <div class="section-heading compact"><div><h3>Conexión registrada en Cloudera</h3><p>Escribe el nombre exacto que aparece en el widget de conexiones de CML.</p></div><span class="secure-inline">◆ CML</span></div>
+            <label class="wide">Nombre de la conexión<input id="cloudera-connection-name" autocomplete="off" placeholder="vast-data-demo"></label>
+            <div class="field-row"><label>API Key ID <span>(opcional)</span><input id="cloudera-api-key-id" autocomplete="off" placeholder="Identificador de la clave"></label><label>API Key Value <span>(opcional)</span><input id="cloudera-api-key-value" type="password" autocomplete="new-password" placeholder="Valor secreto"></label></div>
+            <p class="field-note">Si la app ya se ejecuta con la identidad correcta de CML, deja ambas claves vacías.</p>
+          </div>
+          <div id="trino-fields" class="subpanel connector-fields" hidden>
+            <div class="section-heading compact"><div><h3>Conexión Trino</h3><p>La URL puede incluir el catálogo y el esquema de tu Virtual Warehouse.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
+            <label class="wide">JDBC URL<input id="trino-url" autocomplete="off" placeholder="jdbc:trino://warehouse.environment.dwx.company.com:443/catalog/schema"></label>
+            <div class="field-row"><label>Usuario<input id="trino-user" autocomplete="username" placeholder="usuario"></label><label>Contraseña <span>(opcional)</span><input id="trino-password" type="password" autocomplete="current-password"></label></div>
+          </div>
+          <div class="connect-row"><button id="connect-data-source" type="button" class="primary-button">Conectar y descubrir bases de datos</button><span id="connection-status" class="inline-status">La fuente demo seguirá activa hasta que completes una conexión.</span></div>
           <div class="field-row"><label>Base de datos / esquema<select id="database-select"><option value="">Selecciona primero una conexión</option></select></label><div class="status-box"><span id="db-status-dot"></span><div><small>ESTADO</small><b id="db-status">Pendiente</b></div></div></div>
           <div class="section-heading"><div><h3>Selecciona las tablas</h3><p>Solo estas tablas formarán parte del contexto del modelo.</p></div><button id="toggle-all" type="button" class="text-button">Seleccionar todas</button></div>
           <div id="table-picker" class="table-picker"><p class="empty-state">Elige una base de datos para descubrir sus tablas.</p></div>
@@ -120,13 +138,13 @@
             <label><input type="checkbox" data-module="chart" checked><span>↗</span><b>Gráficas</b><small>Visualización elegida por el modelo</small></label>
             <label><input type="checkbox" data-module="sql" checked><span>⌁</span><b>Consulta SQL</b><small>Lista para copiar y reutilizar</small></label>
           </div>
-          <div class="field-row language-row"><label>Idioma de la aplicación<select id="ui-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Idioma de las respuestas<select id="model-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label></div>
+          <div class="field-row language-row interface-options"><label>Idioma de la aplicación<select id="ui-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Idioma de las respuestas<select id="model-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Apariencia<select id="ui-theme"><option value="dark">Oscura</option><option value="light">Clara</option></select></label></div>
         </section>
         <footer><span id="save-status">Los cambios se guardan en esta sesión.</span><div><button type="button" id="previous-step" class="secondary-button" hidden>Anterior</button><button type="button" id="next-step" class="primary-button">Continuar</button><button value="save" id="save-settings" class="primary-button" hidden>Guardar configuración</button></div></footer>
       </div>
     </form>
   </dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

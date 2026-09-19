@@ -12,6 +12,7 @@ DEPENDENCIES = {
     "flask": "Flask>=3.0,<4",
     "requests": "requests>=2.31,<3",
     "pandas": "pandas>=2.0,<3",
+    "psycopg": "psycopg[binary]>=3.1,<4",
     "trino": "trino>=0.333,<1",
 }
 
@@ -65,18 +66,31 @@ def ok(data=None, **extra):
 
 def selected_connection(payload):
     direct = payload.get("connection_spec") or {}
-    if direct.get("engine") == "trino" and str(direct.get("jdbc_url", "")).startswith("jdbc:trino://"):
+    engine = str(direct.get("engine", "")).lower()
+    if engine == "postgresql":
+        url = str(direct.get("url", "")).strip()
+        database = str(direct.get("database", "")).strip()
+        if not re.match(r"^(?:jdbc:)?postgres(?:ql)?://", url, re.I):
+            raise ValueError("La URL de PostgreSQL debe comenzar por postgresql:// o jdbc:postgresql://.")
+        if not database:
+            raise ValueError("Indica la base de datos inicial de PostgreSQL.")
+        return {
+            "name": "direct-postgresql", "label": "PostgreSQL", "engine": "postgresql",
+            "url": url, "database": database, "active_database": str(payload.get("database") or database),
+            "username": str(direct.get("username", "")), "password": str(direct.get("password", "")),
+        }
+    if engine == "trino" and str(direct.get("jdbc_url", "")).startswith("jdbc:trino://"):
         return {"name": "direct-trino", "label": "Trino JDBC", "engine": "trino", **direct}
-    if direct.get("cml_registered"):
+    if engine in {"cloudera", "cml"} or direct.get("cml_registered"):
         name = str(direct.get("name", ""))
         if not re.fullmatch(r"[A-Za-z0-9_. -]{1,200}", name):
-            raise ValueError("El nombre de la conexión CML no es válido.")
+            raise ValueError("Indica un nombre válido de conexión registrada en Cloudera.")
         return {
             "name": name,
-            "label": str(direct.get("label") or name),
-            "engine": str(direct.get("engine") or "cml"),
+            "label": str(direct.get("label") or name), "engine": "cloudera",
             "cml_registered": True,
             "cdsw_api_key": str(direct.get("cdsw_api_key", "")),
+            "api_key_id": str(direct.get("api_key_id", "")),
         }
     name = payload.get("connection")
     for item in catalog.connections():
@@ -112,28 +126,6 @@ def favicon():
 @app.get("/api/connections")
 def connections():
     return ok(catalog.connections())
-
-
-@app.get("/api/cml-context")
-def cml_context():
-    domain = os.getenv("CDSW_DOMAIN", "")
-    if domain and not re.match(r"^https?://", domain, re.I):
-        domain = "https://" + domain
-    return ok({
-        "base_url": domain,
-        "project_id": os.getenv("CDSW_PROJECT_ID", ""),
-    })
-
-
-@app.post("/api/connections/discover")
-def discover_connections():
-    payload = request.get_json(force=True)
-    discovered = catalog.discover_connections(
-        str(payload.get("base_url", "")),
-        str(payload.get("api_key_value", "")),
-        str(payload.get("project_id", "")),
-    )
-    return ok(discovered)
 
 
 @app.post("/api/databases")
@@ -197,7 +189,10 @@ def ask():
     if spec.get("demo") and not payload.get("model", {}).get("endpoint"):
         plan = demo_plan(question)
     else:
-        dialect = {"impala": "Impala SQL", "hive": "HiveQL", "trino": "Trino SQL", "sqlite": "SQLite"}.get(spec["engine"], spec["engine"])
+        dialect = {
+            "impala": "Impala SQL", "hive": "HiveQL", "cloudera": "Cloudera SQL (Impala/Hive)",
+            "trino": "Trino SQL", "postgresql": "PostgreSQL", "sqlite": "SQLite",
+        }.get(spec["engine"], spec["engine"])
         system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
 Use only read-only {dialect}. Use only the supplied schema. Always include LIMIT 500 or less.
 chart must be one of auto, bar, stacked_bar, line, multi_line, donut, none.

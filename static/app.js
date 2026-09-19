@@ -4,12 +4,12 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   connections: [], connection: 'talk-to-data-demo', connectionSpec: null, database: 'demo',
   tables: ['sales', 'stores'], profiles: [], step: 0,
-  cmlAuth: { baseUrl:'', projectId:'', apiKeyId:'', apiKeyValue:'' },
   modules: { summary: true, table: true, map: true, chart: true, sql: true },
   model: { endpoint: '', model: '', auth_type: 'cdp', token: '', api_key_id: '', api_key_value: '' },
   dataContext: sessionStorage.getItem('ttd-data-context') || '',
   generatedContext: sessionStorage.getItem('ttd-generated-context') || '',
   uiLanguage: localStorage.getItem('ttd-language') || 'es', modelLanguage: 'es',
+  uiTheme: localStorage.getItem('ttd-theme') || 'dark',
 };
 
 const translations = {
@@ -28,17 +28,8 @@ async function api(path, options = {}) {
 }
 
 function activeConnectionPayload() {
-  if (state.connectionSpec) return { connection:'direct-trino', connection_spec:state.connectionSpec };
-  const selected = state.connections.find(item => item.name === state.connection);
-  if (selected?.cml_registered) {
-    return { connection:state.connection, connection_spec:{ ...selected, cdsw_api_key:state.cmlAuth.apiKeyValue } };
-  }
+  if (state.connectionSpec) return { connection:'direct', connection_spec:state.connectionSpec };
   return { connection:state.connection };
-}
-
-function renderConnectionOptions() {
-  $('#connection-select').innerHTML = state.connections.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.label)} · ${escapeHtml(item.engine)}</option>`).join('');
-  $('#connection-select').value = state.connection;
 }
 
 function escapeHtml(value) {
@@ -57,17 +48,18 @@ function applyLanguage() {
   localStorage.setItem('ttd-language', state.uiLanguage);
 }
 
+function applyTheme() {
+  document.documentElement.dataset.theme = state.uiTheme;
+  localStorage.setItem('ttd-theme', state.uiTheme);
+  document.querySelector('meta[name="theme-color"]').content = state.uiTheme === 'light' ? '#f3f5f8' : '#07111f';
+}
+
 async function initialize() {
   applyLanguage();
+  applyTheme();
   $('#model-context').value = state.dataContext;
   try {
-    const [connections, context] = await Promise.all([api('/api/connections'), api('/api/cml-context')]);
-    state.connections = connections;
-    state.cmlAuth.baseUrl = context.base_url || '';
-    state.cmlAuth.projectId = context.project_id || '';
-    $('#cml-base-url').value = state.cmlAuth.baseUrl;
-    $('#cml-project-id').value = state.cmlAuth.projectId;
-    renderConnectionOptions();
+    state.connections = await api('/api/connections');
     await loadDatabases();
     $('#database-select').value = state.database;
     await loadTables(true);
@@ -138,8 +130,9 @@ function profileContext(profiles) {
 
 function syncContext() {
   const selected = state.connections.find(item => item.name === state.connection);
-  const name = state.connectionSpec ? 'Trino JDBC' : (selected?.label || state.connection);
-  const engine = state.connectionSpec ? 'Trino' : (selected?.engine || '—');
+  const name = state.connectionSpec?.label || selected?.label || state.connection;
+  const engineNames = { postgresql:'PostgreSQL', cloudera:'Cloudera', trino:'Trino', sqlite:'SQLite' };
+  const engine = engineNames[state.connectionSpec?.engine || selected?.engine] || '—';
   $('#mini-source').textContent = name; $('#context-connection').textContent = name; $('#context-engine').textContent = `${engine} · Conectado`;
   $('#source-pill span:nth-child(2)').textContent = name; $('#source-pill small').textContent = `${state.tables.length} tablas`; $('#table-count').textContent = state.tables.length;
   $('#context-tables').innerHTML = state.tables.map(name => { const profile = state.profiles.find(item => item.table === name); return `<div class="table-item"><span>▦</span><b>${escapeHtml(name)}</b><small>${profile ? profile.columns.length + ' cols' : 'sin perfil'}</small></div>`; }).join('') || '<p class="muted-small">Sin tablas</p>';
@@ -242,16 +235,15 @@ function showStep(index) {
 function bindEvents() {
   $$('[data-open-settings]').forEach(button=>button.addEventListener('click',openSettings)); $$('.step-link').forEach((button,index)=>button.addEventListener('click',()=>showStep(index)));
   $('#next-step').addEventListener('click',()=>showStep(state.step+1)); $('#previous-step').addEventListener('click',()=>showStep(state.step-1));
-  $('#connection-mode').addEventListener('change',event=>{const direct=event.target.value==='trino'; $('#trino-fields').hidden=!direct; $('#cml-auth-fields').hidden=direct; $('#cml-connection-field').hidden=direct;});
-  $('#discover-cml').addEventListener('click',discoverCmlConnections);
-  $('#connection-select').addEventListener('change',async event=>{state.connection=event.target.value;state.connectionSpec=null;state.database='';state.tables=[];state.profiles=[];try{await loadDatabases();await loadTables();}catch(error){toast(error.message,true)}});
-  $('#connect-trino').addEventListener('click',async()=>{const url=$('#trino-url').value.trim();if(!url.startsWith('jdbc:trino://')){toast('La URL debe comenzar por jdbc:trino://',true);return}state.connectionSpec={engine:'trino',jdbc_url:url,username:$('#trino-user').value.trim(),password:$('#trino-password').value};state.database='';state.tables=[];state.profiles=[];try{await loadDatabases();await loadTables();toast('Conexión Trino disponible.')}catch(error){toast(error.message,true)}});
+  $$('input[name="connection-mode"]').forEach(input=>input.addEventListener('change',()=>showConnector(input.value)));
+  $('#connect-data-source').addEventListener('click',connectDataSource);
   $('#database-select').addEventListener('change',async event=>{state.database=event.target.value;state.tables=[];state.profiles=[];try{await loadTables();}catch(error){toast(error.message,true)}});
   $('#toggle-all').addEventListener('click',()=>{const inputs=$$('#table-picker input');const select=!inputs.every(input=>input.checked);inputs.forEach(input=>input.checked=select);syncTableSelection()}); $('#profile-button').addEventListener('click',()=>profileTables());
   $('#auth-type').addEventListener('change',event=>{$('#token-fields').hidden=event.target.value==='apikey';$('#apikey-fields').hidden=event.target.value!=='apikey'});
   $('#test-model').addEventListener('click',async()=>{syncModel();const status=$('#model-status');status.textContent='Comprobando…';try{const result=await api('/api/test-model',{method:'POST',body:JSON.stringify(state.model)});state.model.model=result.model;$('#model-name').value=result.model;$('#model-endpoint').value=result.endpoint;status.textContent=`Conectado · ${result.model} · ${result.latency_ms} ms`;status.className='inline-status success'}catch(error){status.textContent=error.message;status.className='inline-status error'}});
   $$('#module-picker input').forEach(input=>input.addEventListener('change',()=>{state.modules[input.dataset.module]=input.checked;syncContext()}));
   $('#ui-language').value=state.uiLanguage; $('#ui-language').addEventListener('change',event=>{state.uiLanguage=event.target.value;applyLanguage()}); $('#model-language').addEventListener('change',event=>state.modelLanguage=event.target.value);
+  $('#ui-theme').value=state.uiTheme; $('#ui-theme').addEventListener('change',event=>{state.uiTheme=event.target.value;applyTheme()});
   $('#model-context').addEventListener('input',event=>{state.dataContext=event.target.value;sessionStorage.setItem('ttd-data-context',state.dataContext)});
   $('#save-settings').addEventListener('click',event=>{event.preventDefault();syncModel();state.dataContext=$('#model-context').value;sessionStorage.setItem('ttd-data-context',state.dataContext);syncContext();$('#settings-dialog').close();toast('Configuración guardada para esta sesión.')});
   $('#ask-form').addEventListener('submit',event=>{event.preventDefault();ask($('#question').value)}); $('#question').addEventListener('input',resizeComposer); $('#question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('#ask-form').requestSubmit()}});
@@ -262,16 +254,41 @@ function bindEvents() {
 
 function syncModel(){state.model={endpoint:$('#model-endpoint').value.trim(),model:$('#model-name').value.trim(),auth_type:$('#auth-type').value,token:$('#model-token').value,api_key_id:$('#api-key-id').value,api_key_value:$('#api-key-value').value}}
 
-async function discoverCmlConnections(){
-  state.cmlAuth={baseUrl:$('#cml-base-url').value.trim(),projectId:$('#cml-project-id').value.trim(),apiKeyId:$('#cml-api-key-id').value.trim(),apiKeyValue:$('#cml-api-key-value').value};
-  const status=$('#cml-discovery-status');const button=$('#discover-cml');status.textContent='Consultando conexiones visibles…';status.className='inline-status';button.disabled=true;
+function showConnector(mode){
+  $$('.connector-fields').forEach(panel=>panel.hidden=panel.id!==`${mode}-fields`);
+  $$('.connection-route span').forEach((step,index)=>step.classList.toggle('active',index<2));
+}
+
+function connectionSpecFromForm(){
+  const mode=$('input[name="connection-mode"]:checked').value;
+  if(mode==='postgresql'){
+    const url=$('#postgres-url').value.trim(),database=$('#postgres-database').value.trim(),username=$('#postgres-user').value.trim();
+    if(!/^(?:jdbc:)?postgres(?:ql)?:\/\//i.test(url))throw new Error('La URL debe comenzar por postgresql:// o jdbc:postgresql://.');
+    if(!database)throw new Error('Indica la base de datos inicial de PostgreSQL.');
+    if(!username)throw new Error('Indica el usuario de PostgreSQL.');
+    return {engine:'postgresql',label:'PostgreSQL',url,database,username,password:$('#postgres-password').value};
+  }
+  if(mode==='cloudera'){
+    const name=$('#cloudera-connection-name').value.trim();
+    if(!name)throw new Error('Indica el nombre de la conexión registrada en Cloudera.');
+    return {engine:'cloudera',label:name,name,cml_registered:true,api_key_id:$('#cloudera-api-key-id').value.trim(),cdsw_api_key:$('#cloudera-api-key-value').value};
+  }
+  const jdbc_url=$('#trino-url').value.trim();
+  if(!jdbc_url.startsWith('jdbc:trino://'))throw new Error('La URL debe comenzar por jdbc:trino://.');
+  return {engine:'trino',label:'Trino',jdbc_url,username:$('#trino-user').value.trim(),password:$('#trino-password').value};
+}
+
+async function connectDataSource(){
+  const button=$('#connect-data-source'),status=$('#connection-status');
+  const previous={connectionSpec:state.connectionSpec,database:state.database,tables:[...state.tables],profiles:[...state.profiles]};
   try{
-    const discovered=await api('/api/connections/discover',{method:'POST',body:JSON.stringify({base_url:state.cmlAuth.baseUrl,project_id:state.cmlAuth.projectId,api_key_id:state.cmlAuth.apiKeyId,api_key_value:state.cmlAuth.apiKeyValue})});
-    const demo=state.connections.find(item=>item.demo)||{name:'talk-to-data-demo',engine:'sqlite',label:'Demo · Retail analytics',demo:true};
-    state.connections=[...discovered,demo];state.connection=discovered[0]?.name||demo.name;state.connectionSpec=null;state.database='';state.tables=[];state.profiles=[];renderConnectionOptions();
-    status.textContent=`${discovered.length} conexiones visibles para este usuario`;status.className='inline-status success';
-    if(discovered.length){await loadDatabases();await loadTables()}else{toast('El usuario no tiene conexiones disponibles en este proyecto.',true)}
-  }catch(error){status.textContent=error.message;status.className='inline-status error';toast(error.message,true)}finally{button.disabled=false}
+    const spec=connectionSpecFromForm();button.disabled=true;button.textContent='Conectando…';status.textContent='Comprobando acceso y descubriendo bases de datos…';status.className='inline-status';
+    state.connectionSpec=spec;state.database=spec.database||'';state.tables=[];state.profiles=[];
+    await loadDatabases();await loadTables();syncContext();
+    $$('.connection-route span').forEach(step=>step.classList.add('active'));
+    status.textContent='Conexión lista. Elige una base de datos y sus tablas.';status.className='inline-status success';toast(`${spec.label}: conexión disponible.`);
+  }catch(error){state.connectionSpec=previous.connectionSpec;state.database=previous.database;state.tables=previous.tables;state.profiles=previous.profiles;syncContext();status.textContent=error.message;status.className='inline-status error';setDbStatus('La conexión anterior sigue activa',true);toast(error.message,true)}
+  finally{button.disabled=false;button.textContent='Conectar y descubrir bases de datos'}
 }
 async function newChat(){await api('/api/history',{method:'DELETE'});location.reload()}
 

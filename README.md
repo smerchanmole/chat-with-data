@@ -26,7 +26,15 @@ El servidor siempre enlaza exclusivamente con `127.0.0.1`:
 
 No es necesario definir una variable `PORT` ni utilizar un script de shell entre ambos entornos. En una aplicación de Cloudera basta con indicar `app.py` como fichero de ejecución.
 
-## Conexiones CML: Impala, Hive y Trino
+## Fuentes de datos
+
+La pantalla de configuración ofrece tres conectores explícitos. En todos ellos, el botón **Conectar y descubrir bases de datos** valida la conexión y completa el selector de bases/esquemas antes de descubrir las tablas.
+
+### PostgreSQL
+
+Solicita URL del servidor, base de datos inicial, usuario y contraseña. Admite URLs `postgresql://...` y `jdbc:postgresql://...`; puede añadirse `?sslmode=require`. La base inicial se usa para consultar las demás bases accesibles y las tablas se muestran calificadas como `esquema.tabla`.
+
+### Cloudera: Impala y Hive
 
 La aplicación usa el patrón de Cloudera Machine Learning:
 
@@ -38,18 +46,9 @@ dataframe = conn.get_pandas_dataframe("SHOW DATABASES")
 conn.close()
 ```
 
-Desde **Configuración → Fuente de datos → Identidad de Cloudera**, indica:
+En **Configuración → Fuente de datos → Cloudera**, escribe el nombre exacto de la conexión que aparece en el widget de CML, por ejemplo `vast-data-demo`. La app llama directamente a `cmldata.get_connection(nombre)` y ejecuta `SHOW DATABASES`; no necesita una API para enumerar conexiones. El API Key ID y Value son opcionales: pueden utilizarse cuando la app necesite actuar con la identidad de un usuario concreto.
 
-- URL del Workbench.
-- Project ID (se completa desde `CDSW_PROJECT_ID` cuando CML lo publica).
-- API Key ID, únicamente como referencia visual.
-- API Key Value de API v2, que autentica las llamadas con `Authorization: Bearer`.
-
-La aplicación consulta el `swagger.json` del propio Workbench para localizar la operación de Data Connections compatible con esa versión, pagina la lista completa y muestra únicamente las conexiones visibles para el usuario dentro del proyecto. Después aplica temporalmente el API Key Value a `cmldata` antes de cada `get_connection`. El secreto permanece en memoria del navegador y no se guarda en disco, cookies, historial ni Git.
-
-`CML_DATA_CONNECTIONS=nombre:motor,...` sigue disponible como alternativa administrativa, pero ya no contiene valores predeterminados ni es el mecanismo principal de descubrimiento.
-
-## Trino mediante JDBC URL
+### Trino mediante JDBC URL
 
 También se puede configurar directamente desde la interfaz con:
 
@@ -58,6 +57,10 @@ jdbc:trino://virtual-warehouse.environment.dwx.company.com:443/catalog/schema
 ```
 
 La URL se traduce al cliente Python de Trino. Si no incluye catálogo o esquema, el asistente descubre primero los catálogos y sus esquemas. Se admite autenticación básica opcional; los valores permanecen únicamente en la sesión del navegador.
+
+## Apariencia
+
+En **Configuración → Respuesta → Apariencia** se puede alternar entre tema oscuro y claro. La preferencia se conserva localmente en el navegador; las credenciales siguen siendo únicamente de sesión.
 
 ## Modelo LLM
 
@@ -78,7 +81,7 @@ El prompt contiene solo los perfiles de las tablas seleccionadas y las seis inte
 - Las conexiones se cierran después de cada consulta.
 - El perfilado usa como máximo 100 filas y 12 tablas.
 - La memoria es temporal, se separa por cookie de sesión y conserva hasta 30 respuestas.
-- Los secretos del modelo, Trino y Cloudera no se escriben en disco, cookies ni `localStorage`.
+- Los secretos del modelo, PostgreSQL, Trino y Cloudera no se escriben en disco, cookies ni `localStorage`.
 
 ## Pruebas
 

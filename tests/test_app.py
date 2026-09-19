@@ -91,37 +91,34 @@ class TalkToDataTests(unittest.TestCase):
             __import__("pathlib").Path("/home/cdsw/project").resolve(),
         )
 
-    def test_authenticated_cml_connection_discovery(self):
-        swagger = {
-            "paths": {
-                "/api/v2/projects/{project_id}/data-connections": {
-                    "get": {
-                        "operationId": "listDataConnections",
-                        "parameters": [
-                            {"name": "project_id", "in": "path", "required": True},
-                            {"name": "page_size", "in": "query"},
-                        ],
-                    }
-                }
-            }
+    def test_manual_cloudera_connection_discovers_databases(self):
+        with patch.object(catalog, "databases", return_value=["default", "analytics"]) as databases:
+            response = self.client.post("/api/databases", json={
+                "connection": "direct",
+                "connection_spec": {
+                    "engine": "cloudera", "name": "vast-data-demo",
+                    "api_key_id": "key-id", "cdsw_api_key": "secret-value",
+                },
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"], ["default", "analytics"])
+        spec = databases.call_args.args[0]
+        self.assertEqual(spec["name"], "vast-data-demo")
+        self.assertEqual(spec["engine"], "cloudera")
+        self.assertEqual(spec["cdsw_api_key"], "secret-value")
+
+    def test_postgresql_parameters_and_database_discovery(self):
+        spec = {
+            "engine": "postgresql", "url": "jdbc:postgresql://db.example:5544?sslmode=require",
+            "database": "postgres", "username": "analyst", "password": "secret",
         }
-        swagger_response = Mock()
-        swagger_response.json.return_value = swagger
-        swagger_response.raise_for_status.return_value = None
-        list_response = Mock()
-        list_response.json.return_value = {
-            "data_connections": [
-                {"name": "warehouse-hive", "type": "CDW Hive"},
-                {"name": "analytics-impala", "connection_type": "Impala"},
-            ]
-        }
-        list_response.raise_for_status.return_value = None
-        with patch("data_connector.requests.get", side_effect=[swagger_response, list_response]) as get:
-            connections = catalog.discover_connections("https://workbench.example", "secret-value", "project-123")
-        self.assertEqual([item["name"] for item in connections], ["analytics-impala", "warehouse-hive"])
-        self.assertEqual(connections[0]["engine"], "impala")
-        self.assertEqual(get.call_args_list[1].args[0], "https://workbench.example/api/v2/projects/project-123/data-connections")
-        self.assertEqual(get.call_args_list[1].kwargs["headers"]["Authorization"], "Bearer secret-value")
+        params = catalog._postgres_parameters(spec, "warehouse")
+        self.assertEqual(params["host"], "db.example")
+        self.assertEqual(params["port"], 5544)
+        self.assertEqual(params["dbname"], "warehouse")
+        self.assertEqual(params["sslmode"], "require")
+        with patch.object(catalog, "_postgres_rows", return_value={"columns": ["datname"], "rows": [("postgres",), ("warehouse",)]}):
+            self.assertEqual(catalog.databases(spec), ["postgres", "warehouse"])
 
     def test_cloudera_model_id_is_discovered(self):
         models_response = Mock(status_code=200)
