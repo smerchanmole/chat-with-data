@@ -43,6 +43,22 @@ class TalkToDataTests(unittest.TestCase):
         history = self.client.get("/api/history").get_json()["data"]
         self.assertEqual(len(history), 1)
 
+    def test_editable_profile_context_reaches_the_model(self):
+        spec = next(item for item in catalog.connections() if item["name"] == "talk-to-data-demo")
+        profiles = catalog.profile(spec, "demo", ["sales"])
+        plan = '{"sql":"SELECT category, SUM(revenue) AS revenue FROM sales GROUP BY category","title":"Ventas","summary_hint":"Resumen","chart":"bar"}'
+        with patch.object(llm, "complete", return_value=plan) as complete:
+            response = self.client.post("/api/ask", json={
+                "connection": "talk-to-data-demo", "database": "demo", "tables": ["sales"],
+                "profiles": profiles, "additional_context": "Responde con puntos y trata sale_date como DATE.",
+                "modules": {"summary": True}, "model_language": "es",
+                "model": {"endpoint": "https://model.example/v1/chat/completions"}, "question": "Ventas por categoría",
+            })
+        self.assertEqual(response.status_code, 200)
+        system_prompt = complete.call_args.args[1][0]["content"]
+        self.assertIn("Responde con puntos", system_prompt)
+        self.assertIn("sale_date como DATE", system_prompt)
+
     def test_write_queries_are_blocked(self):
         spec = next(item for item in catalog.connections() if item["name"] == "talk-to-data-demo")
         with self.assertRaises(ValueError):

@@ -191,6 +191,7 @@ def ask():
     if not tables or not profiles:
         raise ValueError("Selecciona y analiza al menos una tabla.")
     modules = payload.get("modules", {})
+    additional_context = str(payload.get("additional_context", "")).strip()[:12000]
     history = memory.setdefault(session["conversation_id"], [])
     context = history[-6:]
     if spec.get("demo") and not payload.get("model", {}).get("endpoint"):
@@ -201,7 +202,9 @@ def ask():
 Use only read-only {dialect}. Use only the supplied schema. Always include LIMIT 500 or less.
 chart must be one of auto, bar, stacked_bar, line, multi_line, donut, none.
 Never invent columns. Language for title and summary: {payload.get('model_language', 'es')}.
-Schema/profile: {json.dumps(profiles, ensure_ascii=False)}"""
+Schema/profile: {json.dumps(profiles, ensure_ascii=False)}
+Editable context and user preferences (honor them unless they conflict with safety or the schema):
+{additional_context or '(none)'}"""
         messages = [{"role": "system", "content": system}]
         for item in context:
             messages.append({"role": "user", "content": item["question"]})

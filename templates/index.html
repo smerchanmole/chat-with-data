@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07111f">
   <title>Talk to Data</title>
-  <link rel="stylesheet" href="/static/style.css?v=1">
+  <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
@@ -40,7 +40,7 @@
         </div>
       </header>
 
-      <section id="chat-stream" class="chat-stream" aria-live="polite">
+      <section id="chat-stream" class="chat-stream" aria-label="Conversación" aria-live="polite" tabindex="0">
         <div id="welcome" class="welcome">
           <div class="spark-logo"><span>✦</span></div>
           <p class="eyebrow">AI DATA ASSISTANT</p>
@@ -85,6 +85,11 @@
       <div class="settings-content">
         <header><div><p id="step-kicker" class="eyebrow">PASO 1 DE 3</p><h2 id="step-title">Conecta una fuente de datos</h2></div><button class="close-button" value="cancel" aria-label="Cerrar">×</button></header>
         <section class="settings-step active" data-step-panel="data">
+          <div class="model-context-panel">
+            <div class="section-heading compact"><div><h3>Contexto e instrucciones para el modelo</h3><p>Se completa con el profiling. Puedes editarlo y añadir tus preferencias para todas las preguntas de esta sesión.</p></div><span class="secure-inline">✦ Editable</span></div>
+            <textarea id="model-context" rows="6" maxlength="12000" placeholder="Después del profiling aparecerán aquí las tablas y columnas. Añade, por ejemplo: responde siempre en español; trata sale_date como DATE; responde de forma esquemática con puntos."></textarea>
+            <small class="context-help">Este texto se enviará al modelo junto con el esquema estructurado y la memoria de la conversación.</small>
+          </div>
           <div class="field-row"><label>Tipo de conexión<select id="connection-mode"><option value="cml">Conexión registrada en CML</option><option value="trino">Trino mediante JDBC URL</option></select></label><label id="cml-connection-field">Conexión<select id="connection-select"></select></label></div>
           <div id="cml-auth-fields" class="subpanel">
             <div class="section-heading compact"><div><h3>Identidad de Cloudera</h3><p>Descubre las conexiones que el usuario puede ver en este proyecto.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
@@ -122,6 +127,6 @@
     </form>
   </dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=1"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

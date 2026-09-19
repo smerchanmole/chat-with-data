@@ -29,3 +29,18 @@ dialog{width:min(1000px,calc(100% - 42px));height:min(700px,calc(100% - 42px));p
 @keyframes typing{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}@keyframes pulse-mic{50%{box-shadow:0 0 0 7px rgba(255,120,95,.12)}}
 @media(max-width:1050px){.app-shell{grid-template-columns:210px 1fr}.context-panel{display:none}.suggestion-grid{grid-template-columns:1fr}.welcome{margin-top:2vh}.suggestion small{display:none}}
 @media(max-width:720px){body{overflow:auto}.app-shell{display:block;height:auto;min-height:100vh}.sidebar{position:fixed;z-index:8;right:12px;bottom:12px;left:12px;display:block;padding:8px;border:1px solid var(--line);border-radius:14px}.brand,.new-chat,.nav-label,.history-block,.sidebar-foot{display:none}.main-nav{display:grid;grid-template-columns:1fr 1fr}.nav-item{justify-content:center}.nav-item.active:before{display:none}.workspace{min-height:100vh}.topbar{padding:14px 18px}.source-pill{display:none}.chat-stream{padding:25px 16px 210px}.composer-wrap{padding-right:16px;padding-bottom:78px;padding-left:16px}.settings-shell{display:block}.settings-nav{display:none}.settings-content{height:100%}.field-row,.module-picker,.table-picker{grid-template-columns:1fr}.suggestion-grid{grid-template-columns:1fr}dialog{width:calc(100% - 20px);height:calc(100% - 20px)}.settings-step,.settings-content>header,.settings-content>footer{padding-right:18px;padding-left:18px}.settings-content>footer>span{display:none}}
+
+/* Keep the desktop grid constrained to the viewport so the conversation, rather
+   than the whole application shell, owns vertical scrolling. */
+.app-shell{grid-template-rows:minmax(0,1fr);height:100dvh;min-height:0;overflow:hidden}
+.sidebar,.context-panel{min-height:0}
+.sidebar{overflow:hidden}
+.workspace{min-height:0;overflow:hidden}
+.chat-stream{flex:1 1 0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch}
+.chat-stream::-webkit-scrollbar{width:10px}.chat-stream::-webkit-scrollbar-track{background:rgba(255,255,255,.018)}.chat-stream::-webkit-scrollbar-thumb{border:3px solid transparent;border-radius:10px;background:rgba(145,164,185,.35);background-clip:padding-box}.chat-stream::-webkit-scrollbar-thumb:hover{background:rgba(243,106,47,.55);background-clip:padding-box}
+.model-context-panel{margin:0 0 20px;padding:15px;border:1px solid rgba(156,132,255,.2);border-radius:12px;background:rgba(156,132,255,.055)}
+.settings-content textarea{width:100%;min-height:118px;padding:11px;border:1px solid var(--line);border-radius:9px;resize:vertical;outline:0;color:#dbe4ec;background:#0b1a2c;font:10px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+.settings-content textarea:focus{border-color:rgba(156,132,255,.55);box-shadow:0 0 0 3px rgba(156,132,255,.08)}
+.context-help{display:block;margin-top:7px;color:#60758b;font-size:8px}
+
+@media(max-width:720px){.app-shell{height:auto;min-height:100dvh;overflow:visible}.sidebar{overflow:visible}.workspace{min-height:100dvh;overflow:visible}.chat-stream{overflow:visible}}

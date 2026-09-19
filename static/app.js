@@ -7,6 +7,8 @@ const state = {
   cmlAuth: { baseUrl:'', projectId:'', apiKeyId:'', apiKeyValue:'' },
   modules: { summary: true, table: true, map: true, chart: true, sql: true },
   model: { endpoint: '', model: '', auth_type: 'cdp', token: '', api_key_id: '', api_key_value: '' },
+  dataContext: sessionStorage.getItem('ttd-data-context') || '',
+  generatedContext: sessionStorage.getItem('ttd-generated-context') || '',
   uiLanguage: localStorage.getItem('ttd-language') || 'es', modelLanguage: 'es',
 };
 
@@ -57,6 +59,7 @@ function applyLanguage() {
 
 async function initialize() {
   applyLanguage();
+  $('#model-context').value = state.dataContext;
   try {
     const [connections, context] = await Promise.all([api('/api/connections'), api('/api/cml-context')]);
     state.connections = connections;
@@ -105,11 +108,32 @@ async function profileTables(silent = false) {
   const button = $('#profile-button'); button.disabled = true; button.textContent = 'Analizando…';
   try {
     state.profiles = await api('/api/profile', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables }) });
+    const generated = profileContext(state.profiles);
+    if (!state.dataContext || state.dataContext === state.generatedContext) {
+      state.dataContext = generated;
+      $('#model-context').value = generated;
+      sessionStorage.setItem('ttd-data-context', generated);
+    }
+    state.generatedContext = generated;
+    sessionStorage.setItem('ttd-generated-context', generated);
     const columns = state.profiles.reduce((sum, item) => sum + item.columns.length, 0);
     $('#profile-status').textContent = `Perfil listo · ${state.profiles.length} tablas · ${columns} columnas`; $('#profile-status').className = 'inline-status success';
     if (!silent) toast('Perfil de datos actualizado.');
   } catch (error) { $('#profile-status').textContent = error.message; $('#profile-status').className = 'inline-status error'; if (!silent) toast(error.message, true); }
   finally { button.disabled = false; button.textContent = 'Analizar selección'; }
+}
+
+function profileContext(profiles) {
+  const heading = `Base de datos/esquema: ${state.database || 'sin seleccionar'}.`;
+  const tables = profiles.map(profile => {
+    const columns = profile.columns.map(column => {
+      const details = [`tipo=${column.type}`, `nulos=${column.nulls}`, `distintos_en_muestra=${column.unique}`];
+      if (column.examples?.length) details.push(`ejemplos=${column.examples.join(' | ')}`);
+      return `${column.name} (${details.join(', ')})`;
+    }).join('; ');
+    return `Tabla ${profile.qualified || profile.table} [muestra: ${profile.sample_rows} filas]: ${columns}`;
+  });
+  return [heading, ...tables, '', 'Preferencias del usuario:'].join('\n');
 }
 
 function syncContext() {
@@ -136,7 +160,7 @@ async function ask(question) {
   $('#welcome')?.remove(); appendUser(question); $('#question').value = ''; resizeComposer();
   const typing = appendTyping(); $('#send-button').disabled = true;
   try {
-    const result = await api('/api/ask', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables, profiles:state.profiles, modules:state.modules, model:state.model, model_language:state.modelLanguage, question }) });
+    const result = await api('/api/ask', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables, profiles:state.profiles, additional_context:state.dataContext, modules:state.modules, model:state.model, model_language:state.modelLanguage, question }) });
     typing.remove(); renderAnswer(result); await loadHistory();
   } catch (error) { typing.remove(); renderError(error.message); }
   finally { $('#send-button').disabled = false; $('#question').focus(); }
@@ -228,7 +252,8 @@ function bindEvents() {
   $('#test-model').addEventListener('click',async()=>{syncModel();const status=$('#model-status');status.textContent='Comprobando…';try{const result=await api('/api/test-model',{method:'POST',body:JSON.stringify(state.model)});state.model.model=result.model;$('#model-name').value=result.model;$('#model-endpoint').value=result.endpoint;status.textContent=`Conectado · ${result.model} · ${result.latency_ms} ms`;status.className='inline-status success'}catch(error){status.textContent=error.message;status.className='inline-status error'}});
   $$('#module-picker input').forEach(input=>input.addEventListener('change',()=>{state.modules[input.dataset.module]=input.checked;syncContext()}));
   $('#ui-language').value=state.uiLanguage; $('#ui-language').addEventListener('change',event=>{state.uiLanguage=event.target.value;applyLanguage()}); $('#model-language').addEventListener('change',event=>state.modelLanguage=event.target.value);
-  $('#save-settings').addEventListener('click',event=>{event.preventDefault();syncModel();syncContext();$('#settings-dialog').close();toast('Configuración guardada para esta sesión.')});
+  $('#model-context').addEventListener('input',event=>{state.dataContext=event.target.value;sessionStorage.setItem('ttd-data-context',state.dataContext)});
+  $('#save-settings').addEventListener('click',event=>{event.preventDefault();syncModel();state.dataContext=$('#model-context').value;sessionStorage.setItem('ttd-data-context',state.dataContext);syncContext();$('#settings-dialog').close();toast('Configuración guardada para esta sesión.')});
   $('#ask-form').addEventListener('submit',event=>{event.preventDefault();ask($('#question').value)}); $('#question').addEventListener('input',resizeComposer); $('#question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('#ask-form').requestSubmit()}});
   $$('.suggestion').forEach(button=>button.addEventListener('click',()=>ask(button.dataset.question)));
   $('#new-chat').addEventListener('click',newChat); $('#clear-history').addEventListener('click',newChat);
