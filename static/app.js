@@ -136,6 +136,9 @@ function syncContext() {
   $('#mini-source').textContent = name; $('#context-connection').textContent = name; $('#context-engine').textContent = `${engine} · Conectado`;
   $('#source-pill span:nth-child(2)').textContent = name; $('#source-pill small').textContent = `${state.tables.length} tablas`; $('#table-count').textContent = state.tables.length;
   $('#context-tables').innerHTML = state.tables.map(name => { const profile = state.profiles.find(item => item.table === name); return `<div class="table-item"><span>▦</span><b>${escapeHtml(name)}</b><small>${profile ? profile.columns.length + ' cols' : 'sin perfil'}</small></div>`; }).join('') || '<p class="muted-small">Sin tablas</p>';
+  const totalColumns = state.profiles.reduce((sum, profile) => sum + profile.columns.length, 0);
+  $('#column-count').textContent = totalColumns;
+  $('#context-columns').innerHTML = state.profiles.map((profile, index) => `<details class="schema-table" ${index === 0 ? 'open' : ''}><summary><span>▤</span><b>${escapeHtml(profile.table)}</b><small>${profile.columns.length}</small></summary><div>${profile.columns.map(column => `<div class="schema-column" title="${escapeHtml((column.examples || []).join(' · '))}"><span><b>${escapeHtml(column.name)}</b><small>${escapeHtml(column.type)}</small></span><em>${column.nulls ? column.nulls + ' nulos' : column.unique + ' distintos'}</em></div>`).join('')}</div></details>`).join('') || '<p class="muted-small">Analiza las tablas para ver su esquema.</p>';
   const moduleNames = { summary:'Resumen', table:'Tabla', map:'Mapa', chart:'Gráfica', sql:'SQL' };
   $('#active-modules').innerHTML = Object.entries(state.modules).filter(([,on]) => on).map(([key]) => `<span>${moduleNames[key]}</span>`).join('');
 }
@@ -180,12 +183,12 @@ function renderAnswer(result) {
   const node = document.createElement('div'); node.className = 'message assistant-message';
   node.innerHTML = `<div class="assistant-avatar">✦</div><div class="answer-body"><h3>${escapeHtml(result.title)}</h3>${result.modules.summary ? `<p>${escapeHtml(result.summary)}</p>` : ''}<div class="answer-tabs">${enabledTabs.map(([key,label], index) => `<button data-result-tab="${key}" class="${index === 0 ? 'active' : ''}">${label}</button>`).join('')}</div><div class="result-panel">${enabledTabs.length ? panelFor(enabledTabs[0][0], result) : '<div class="sql-panel">No hay módulos activos.</div>'}</div></div>`;
   $('#chat-stream').append(node);
-  $$('[data-result-tab]', node).forEach(button => button.addEventListener('click', () => { $$('[data-result-tab]', node).forEach(item => item.classList.toggle('active', item === button)); $('.result-panel', node).innerHTML = panelFor(button.dataset.resultTab, result); bindPanelActions(node, result); }));
+  $$('[data-result-tab]', node).forEach(button => button.addEventListener('click', () => { destroyMap(node); $$('[data-result-tab]', node).forEach(item => item.classList.toggle('active', item === button)); $('.result-panel', node).innerHTML = panelFor(button.dataset.resultTab, result); bindPanelActions(node, result); }));
   bindPanelActions(node, result); scrollChat();
 }
 
 function panelFor(type, result) {
-  if (type === 'table') return `<div class="table-scroll"><table><thead><tr>${result.columns.map(col => `<th>${escapeHtml(col)}</th>`).join('')}</tr></thead><tbody>${result.rows.map(row => `<tr>${result.columns.map(col => `<td>${formatValue(row[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  if (type === 'table') return `<div class="table-scroll"><table><thead><tr><th class="row-number" scope="col">#</th>${result.columns.map(col => `<th scope="col">${escapeHtml(col)}</th>`).join('')}</tr></thead><tbody>${result.rows.map((row,index) => `<tr><th class="row-number" scope="row">${index+1}</th>${result.columns.map(col => `<td>${formatValue(row[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   if (type === 'sql') return `<div class="sql-panel"><button class="copy-sql">Copiar</button><pre>${highlightSql(result.sql)}</pre></div>`;
   if (type === 'map') return renderMap(result);
   return renderChart(result);
@@ -193,31 +196,77 @@ function panelFor(type, result) {
 
 function bindPanelActions(node, result) {
   $('.copy-sql', node)?.addEventListener('click', async event => { await navigator.clipboard.writeText(result.sql); event.currentTarget.textContent = 'Copiado ✓'; });
+  initMap(node, result);
 }
 
 function formatValue(value) { if (typeof value === 'number') return escapeHtml(new Intl.NumberFormat(state.uiLanguage, { maximumFractionDigits:2 }).format(value)); return escapeHtml(value); }
 function numericColumns(result) { return result.columns.filter(col => result.rows.some(row => typeof row[col] === 'number') && !/lat|lon|id/i.test(col)); }
 
+const chartColors = ['var(--chart-1)','var(--chart-2)','var(--chart-3)'];
+function compactNumber(value) { return new Intl.NumberFormat(state.uiLanguage,{notation:'compact',maximumFractionDigits:1}).format(value); }
+function chartLabelColumn(result, metrics) { return result.columns.find(col => !metrics.includes(col) && !/lat|lon|id/i.test(col)) || result.columns[0]; }
+function axisTicks(max, count=4) { return Array.from({length:count+1},(_,index)=>max*index/count); }
+
 function renderChart(result) {
-  const nums = numericColumns(result); const metric = nums[0]; const label = result.columns.find(col => col !== metric && !/lat|lon|id/i.test(col)) || result.columns[0];
-  if (!metric || !result.rows.length) return '<div class="sql-panel">No hay una combinación de categoría y valor numérico para visualizar.</div>';
-  const rows = result.rows.slice(0, 14); const values = rows.map(row => Number(row[metric]) || 0); const max = Math.max(...values, 1);
+  const metrics = numericColumns(result).slice(0,3); const label = chartLabelColumn(result,metrics);
+  if (!metrics.length || !result.rows.length) return '<div class="sql-panel">No hay una combinación de categoría y valor numérico para visualizar.</div>';
+  const rows = result.rows.slice(0,14); const metric = metrics[0]; const values = rows.map(row => Number(row[metric]) || 0); const max = Math.max(...values,1);
   if (result.chart === 'donut') {
-    const colors = ['#f36a2f','#35d8db','#9c84ff','#49d6a0','#ffc36b','#ff785f']; const total = values.reduce((a,b)=>a+b,0) || 1; let cursor=0;
+    const colors = ['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-6)']; const total = values.reduce((a,b)=>a+b,0) || 1; let cursor=0;
     const stops = values.map((value,index)=>{const start=cursor;cursor += value/total*100;return `${colors[index%colors.length]} ${start}% ${cursor}%`;}).join(',');
-    return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops})"></div><div class="legend">${rows.map((row,index)=>`<div><i style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(row[label])} · ${formatValue(row[metric])}</span></div>`).join('')}</div></div>`;
+    return `<div class="donut-wrap"><div class="donut-stack"><div class="donut" style="background:conic-gradient(${stops})"></div><strong>${compactNumber(total)}</strong><small>${escapeHtml(metric)}</small></div><div class="legend">${rows.map((row,index)=>`<div><i style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(row[label])} · ${formatValue(row[metric])} (${Math.round(values[index]/total*100)}%)</span></div>`).join('')}</div></div>`;
   }
   if (/line/.test(result.chart)) {
-    const width=650,height=190,pad=20; const points=values.map((value,index)=>`${pad+(index*Math.max(1,(width-pad*2)/(values.length-1)))},${height-pad-(value/max*(height-pad*2))}`).join(' ');
-    return `<div class="chart-line"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(result.title)}"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f36a2f" stop-opacity=".35"/><stop offset="1" stop-color="#f36a2f" stop-opacity="0"/></linearGradient></defs><polyline points="${points} ${width-pad},${height-pad} ${pad},${height-pad}" fill="url(#area)" stroke="none"/><polyline points="${points}" fill="none" stroke="#ff8e50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${points.split(' ').map(point=>`<circle cx="${point.split(',')[0]}" cy="${point.split(',')[1]}" r="4" fill="#07111f" stroke="#ff9b62" stroke-width="2"/>`).join('')}</svg></div>`;
+    return renderLineChart(result,rows,label,metrics.slice(0,2));
   }
-  return `<div class="chart-wrap">${rows.map((row,index)=>`<div class="chart-bar" style="height:${Math.max(7,values[index]/max*100)}%" title="${escapeHtml(row[label])}: ${formatValue(row[metric])}"><span>${escapeHtml(row[label])}</span></div>`).join('')}</div>`;
+  return renderBarChart(result,rows,label,metrics);
 }
 
+function renderLineChart(result,rows,label,metrics) {
+  const width=760,height=330,left=66,right=metrics.length>1?70:24,top=48,bottom=62,plotW=width-left-right,plotH=height-top-bottom;
+  const maxima=metrics.map(metric=>Math.max(...rows.map(row=>Number(row[metric])||0),1));
+  const x=index=>left+(rows.length===1?plotW/2:index*plotW/(rows.length-1));
+  const y=(value,series)=>top+plotH-(Number(value)||0)/maxima[series]*plotH;
+  const grid=axisTicks(maxima[0]).map(value=>`<g><line class="chart-grid" x1="${left}" y1="${y(value,0)}" x2="${left+plotW}" y2="${y(value,0)}"/><text class="chart-axis-label" x="${left-10}" y="${y(value,0)+4}" text-anchor="end">${compactNumber(value)}</text></g>`).join('');
+  const rightAxis=metrics[1]?axisTicks(maxima[1]).map(value=>`<text class="chart-axis-label" x="${left+plotW+10}" y="${y(value,1)+4}" text-anchor="start">${compactNumber(value)}</text>`).join(''):'';
+  const step=Math.max(1,Math.ceil(rows.length/8));
+  const xLabels=rows.map((row,index)=>index%step===0||index===rows.length-1?`<text class="chart-axis-label" x="${x(index)}" y="${top+plotH+25}" text-anchor="middle">${escapeHtml(row[label])}</text>`:'').join('');
+  const series=metrics.map((metric,seriesIndex)=>{const points=rows.map((row,index)=>`${x(index)},${y(row[metric],seriesIndex)}`).join(' ');return `<polyline class="chart-series" points="${points}" fill="none" stroke="${chartColors[seriesIndex]}"/>${rows.map((row,index)=>`<circle class="chart-point" cx="${x(index)}" cy="${y(row[metric],seriesIndex)}" r="4" fill="var(--chart-surface)" stroke="${chartColors[seriesIndex]}"><title>${escapeHtml(row[label])} · ${escapeHtml(metric)}: ${formatValue(row[metric])}</title></circle>`).join('')}`}).join('');
+  const legend=metrics.map((metric,index)=>`<span><i style="background:${chartColors[index]}"></i>${escapeHtml(metric)}</span>`).join('');
+  return `<div class="chart-panel"><div class="chart-legend">${legend}</div><svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(result.title)}. Eje horizontal: ${escapeHtml(label)}. Series: ${metrics.map(escapeHtml).join(', ')}"><title>${escapeHtml(result.title)}</title>${grid}${rightAxis}<line class="chart-axis" x1="${left}" y1="${top}" x2="${left}" y2="${top+plotH}"/><line class="chart-axis" x1="${left}" y1="${top+plotH}" x2="${left+plotW}" y2="${top+plotH}"/>${xLabels}${series}<text class="chart-axis-title" x="${left}" y="22">${escapeHtml(metrics[0])}</text>${metrics[1]?`<text class="chart-axis-title" x="${left+plotW}" y="22" text-anchor="end">${escapeHtml(metrics[1])}</text>`:''}<text class="chart-axis-title" x="${left+plotW/2}" y="${height-5}" text-anchor="middle">${escapeHtml(label)}</text></svg></div>`;
+}
+
+function renderBarChart(result,rows,label,metrics) {
+  const width=760,height=340,left=66,right=24,top=48,bottom=76,plotW=width-left-right,plotH=height-top-bottom,stacked=result.chart==='stacked_bar';
+  const max=stacked?Math.max(...rows.map(row=>metrics.reduce((sum,metric)=>sum+(Number(row[metric])||0),0)),1):Math.max(...rows.flatMap(row=>metrics.map(metric=>Number(row[metric])||0)),1);
+  const groupW=plotW/Math.max(rows.length,1),barW=Math.max(5,Math.min(34,(groupW-10)/(stacked?1:metrics.length)));
+  const y=value=>top+plotH-(Number(value)||0)/max*plotH;
+  const grid=axisTicks(max).map(value=>`<g><line class="chart-grid" x1="${left}" y1="${y(value)}" x2="${left+plotW}" y2="${y(value)}"/><text class="chart-axis-label" x="${left-10}" y="${y(value)+4}" text-anchor="end">${compactNumber(value)}</text></g>`).join('');
+  const bars=rows.map((row,rowIndex)=>{const center=left+groupW*(rowIndex+.5);let cumulative=0;const marks=metrics.map((metric,seriesIndex)=>{const value=Number(row[metric])||0;const h=value/max*plotH;const x=stacked?center-barW/2:center-(barW*metrics.length)/2+seriesIndex*barW;const yy=stacked?y(cumulative+value):y(value);cumulative+=value;return `<rect class="chart-rect" x="${x}" y="${yy}" width="${Math.max(1,barW-2)}" height="${Math.max(1,h)}" rx="2" fill="${chartColors[seriesIndex]}"><title>${escapeHtml(row[label])} · ${escapeHtml(metric)}: ${formatValue(value)}</title></rect>`}).join('');return `${marks}<text class="chart-axis-label" transform="translate(${center},${top+plotH+16}) rotate(-35)" text-anchor="end">${escapeHtml(row[label])}</text>`}).join('');
+  const legend=metrics.map((metric,index)=>`<span><i style="background:${chartColors[index]}"></i>${escapeHtml(metric)}</span>`).join('');
+  return `<div class="chart-panel"><div class="chart-legend">${legend}</div><svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(result.title)}. Eje horizontal: ${escapeHtml(label)}. Valores: ${metrics.map(escapeHtml).join(', ')}"><title>${escapeHtml(result.title)}</title>${grid}<line class="chart-axis" x1="${left}" y1="${top}" x2="${left}" y2="${top+plotH}"/><line class="chart-axis" x1="${left}" y1="${top+plotH}" x2="${left+plotW}" y2="${top+plotH}"/>${bars}<text class="chart-axis-title" x="${left}" y="22">${escapeHtml(metrics.join(' · '))}</text><text class="chart-axis-title" x="${left+plotW/2}" y="${height-5}" text-anchor="middle">${escapeHtml(label)}</text></svg></div>`;
+}
+
+let mapSequence=0;
 function renderMap(result) {
   const lat = result.map.latitude, lon = result.map.longitude; const rows = result.rows.filter(row => Number.isFinite(Number(row[lat])) && Number.isFinite(Number(row[lon]))).slice(0,30);
-  const label = result.columns.find(col => ![lat,lon].includes(col)) || lat;
-  return `<div class="map-panel" role="img" aria-label="Puntos geográficos">${rows.map(row => { const x=(Number(row[lon])+180)/360*100; const y=(90-Number(row[lat]))/180*100; return `<div class="map-point" style="left:${x}%;top:${y}%"><span>${escapeHtml(row[label])}</span></div>`; }).join('')}</div>`;
+  if(!rows.length)return '<div class="map-unavailable">La consulta no devolvió coordenadas válidas.</div>';
+  const id=`result-map-${++mapSequence}`;
+  return `<div class="map-shell"><div id="${id}" class="leaflet-map" role="region" aria-label="Mapa interactivo con ${rows.length} ubicaciones"></div><p class="map-caption">${rows.length} ubicaciones · usa los controles para ampliar y desplazarte</p></div>`;
+}
+
+function destroyMap(node){const container=$('.leaflet-map',node);if(container?._mapInstance){container._mapInstance.remove();container._mapInstance=null}}
+function initMap(node,result){
+  const container=$('.leaflet-map',node);if(!container||container._mapInstance)return;
+  if(!window.L){container.innerHTML='<div class="map-unavailable">No se pudo cargar Leaflet. Comprueba el acceso a unpkg.com.</div>';return}
+  const lat=result.map.latitude,lon=result.map.longitude,rows=result.rows.filter(row=>Number.isFinite(Number(row[lat]))&&Number.isFinite(Number(row[lon]))).slice(0,30);
+  const label=result.columns.find(col=>![lat,lon].includes(col))||lat;
+  const map=L.map(container,{scrollWheelZoom:false,zoomControl:true});container._mapInstance=map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+  const bounds=[];
+  rows.forEach(row=>{const point=[Number(row[lat]),Number(row[lon])];bounds.push(point);const details=result.columns.filter(col=>![lat,lon].includes(col)).slice(0,5).map(col=>`<div><b>${escapeHtml(col)}</b><span>${formatValue(row[col])}</span></div>`).join('');L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#f36a2f',fillOpacity:.9}).addTo(map).bindPopup(`<section class="map-popup"><strong>${escapeHtml(row[label])}</strong>${details}</section>`)});
+  if(bounds.length===1)map.setView(bounds[0],11);else map.fitBounds(bounds,{padding:[32,32],maxZoom:11});
+  requestAnimationFrame(()=>map.invalidateSize());
 }
 
 function highlightSql(sql) { return escapeHtml(sql).replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|ON|GROUP BY|ORDER BY|LIMIT|AS|SUM|COUNT|AVG|ROUND|DESC|ASC)\b/gi, '<span class="kw">$1</span>'); }
@@ -269,9 +318,11 @@ function connectionSpecFromForm(){
     return {engine:'postgresql',label:'PostgreSQL',url,database,username,password:$('#postgres-password').value};
   }
   if(mode==='cloudera'){
-    const name=$('#cloudera-connection-name').value.trim();
+    const name=$('#cloudera-connection-name').value.trim(),username=$('#cloudera-user').value.trim(),workload_password=$('#cloudera-workload-password').value;
     if(!name)throw new Error('Indica el nombre de la conexión registrada en Cloudera.');
-    return {engine:'cloudera',label:name,name,cml_registered:true,api_key_id:$('#cloudera-api-key-id').value.trim(),cdsw_api_key:$('#cloudera-api-key-value').value};
+    if(!username)throw new Error('Indica el usuario de Cloudera.');
+    if(!workload_password)throw new Error('Indica la Workload Password de Cloudera.');
+    return {engine:'cloudera',label:name,name,cml_registered:true,username,workload_password};
   }
   const jdbc_url=$('#trino-url').value.trim();
   if(!jdbc_url.startsWith('jdbc:trino://'))throw new Error('La URL debe comenzar por jdbc:trino://.');

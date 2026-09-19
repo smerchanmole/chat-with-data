@@ -85,12 +85,15 @@ def selected_connection(payload):
         name = str(direct.get("name", ""))
         if not re.fullmatch(r"[A-Za-z0-9_. -]{1,200}", name):
             raise ValueError("Indica un nombre válido de conexión registrada en Cloudera.")
+        username = str(direct.get("username", "")).strip()
+        workload_password = str(direct.get("workload_password", ""))
+        if not username or not workload_password:
+            raise ValueError("Indica el usuario y la Workload Password de Cloudera.")
         return {
             "name": name,
             "label": str(direct.get("label") or name), "engine": "cloudera",
             "cml_registered": True,
-            "cdsw_api_key": str(direct.get("cdsw_api_key", "")),
-            "api_key_id": str(direct.get("api_key_id", "")),
+            "username": username, "workload_password": workload_password,
         }
     name = payload.get("connection")
     for item in catalog.connections():

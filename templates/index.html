@@ -6,7 +6,8 @@
   <meta name="theme-color" content="#07111f">
   <title>Talk to Data</title>
   <script>document.documentElement.dataset.theme=localStorage.getItem('ttd-theme')||'dark'</script>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
@@ -71,6 +72,7 @@
       <div class="context-head"><div><p class="eyebrow">CONTEXTO ACTIVO</p><h2 data-i18n="data_context">Contexto de datos</h2></div><button class="icon-button" data-open-settings>•••</button></div>
       <div class="context-section"><p class="context-label" data-i18n="connection">CONEXIÓN</p><div class="context-card connection-card"><span class="db-icon">◫</span><div><b id="context-connection">talk-to-data-demo</b><small id="context-engine">SQLite · Conectado</small></div><span class="pulse"></span></div></div>
       <div class="context-section"><div class="context-label row"><span data-i18n="selected_tables">TABLAS SELECCIONADAS</span><b id="table-count">2</b></div><div id="context-tables" class="table-list"></div><button class="text-button" data-open-settings>＋ <span data-i18n="manage_tables">Gestionar tablas</span></button></div>
+      <div class="context-section schema-section"><div class="context-label row"><span>COLUMNAS DISPONIBLES</span><b id="column-count">0</b></div><div id="context-columns" class="schema-list"><p class="muted-small">Analiza las tablas para ver su esquema.</p></div></div>
       <div class="context-section"><p class="context-label" data-i18n="answer_modules">MÓDULOS DE RESPUESTA</p><div id="active-modules" class="module-chips"></div></div>
       <div class="context-note"><span>✦</span><p><b data-i18n="memory_on">Memoria activa</b><br><small data-i18n="memory_copy">Usaré las últimas preguntas para comprender referencias y comparaciones.</small></p></div>
     </aside>
@@ -107,8 +109,8 @@
           <div id="cloudera-fields" class="subpanel connector-fields" hidden>
             <div class="section-heading compact"><div><h3>Conexión registrada en Cloudera</h3><p>Escribe el nombre exacto que aparece en el widget de conexiones de CML.</p></div><span class="secure-inline">◆ CML</span></div>
             <label class="wide">Nombre de la conexión<input id="cloudera-connection-name" autocomplete="off" placeholder="vast-data-demo"></label>
-            <div class="field-row"><label>API Key ID <span>(opcional)</span><input id="cloudera-api-key-id" autocomplete="off" placeholder="Identificador de la clave"></label><label>API Key Value <span>(opcional)</span><input id="cloudera-api-key-value" type="password" autocomplete="new-password" placeholder="Valor secreto"></label></div>
-            <p class="field-note">Si la app ya se ejecuta con la identidad correcta de CML, deja ambas claves vacías.</p>
+            <div class="field-row"><label>Usuario de Cloudera<input id="cloudera-user" autocomplete="username" placeholder="usuario"></label><label>Workload Password<input id="cloudera-workload-password" type="password" autocomplete="current-password" placeholder="Contraseña de workload"></label></div>
+            <p class="field-note">Se enviarán como USERNAME y PASSWORD únicamente al abrir la conexión con <code>cml.data_v1</code>.</p>
           </div>
           <div id="trino-fields" class="subpanel connector-fields" hidden>
             <div class="section-heading compact"><div><h3>Conexión Trino</h3><p>La URL puede incluir el catálogo y el esquema de tu Virtual Warehouse.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
@@ -145,6 +147,7 @@
     </form>
   </dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="/static/app.js?v=3"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous" defer></script>
+  <script src="/static/app.js?v=4" defer></script>
 </body>
 </html>

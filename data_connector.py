@@ -3,16 +3,12 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
-import threading
 from datetime import date, datetime
 from decimal import Decimal
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-
-_CML_AUTH_LOCK = threading.RLock()
-
 
 @dataclass
 class ConnectionSpec:
@@ -139,29 +135,19 @@ class DataCatalog:
             import cml.data_v1 as cmldata
         except ImportError as exc:
             raise RuntimeError("cml.data_v1 no está disponible en este entorno. Ejecuta la app dentro de CML o usa el modo demo.") from exc
-        api_key = str(spec.get("cdsw_api_key", "")).strip()
-        with _CML_AUTH_LOCK:
-            data_session = getattr(getattr(cmldata, "data", None), "session", None)
-            previous_auth = getattr(data_session, "auth", None) if data_session else None
-            previous_env = os.environ.get("CDSW_APIV2_KEY")
-            if api_key:
-                if data_session is not None:
-                    data_session.auth = (api_key, "")
-                os.environ["CDSW_APIV2_KEY"] = api_key
-            conn = None
-            try:
-                conn = cmldata.get_connection(spec["name"])
-                return conn.get_pandas_dataframe(sql)
-            finally:
-                if conn is not None:
-                    conn.close()
-                if api_key:
-                    if data_session is not None:
-                        data_session.auth = previous_auth
-                    if previous_env is None:
-                        os.environ.pop("CDSW_APIV2_KEY", None)
-                    else:
-                        os.environ["CDSW_APIV2_KEY"] = previous_env
+        credentials = {
+            "USERNAME": str(spec.get("username", "")).strip(),
+            "PASSWORD": str(spec.get("workload_password", "")),
+        }
+        if not credentials["USERNAME"] or not credentials["PASSWORD"]:
+            raise ValueError("Indica el usuario y la Workload Password de Cloudera.")
+        conn = None
+        try:
+            conn = cmldata.get_connection(spec["name"], credentials)
+            return conn.get_pandas_dataframe(sql)
+        finally:
+            if conn is not None:
+                conn.close()
 
     @staticmethod
     def _trino_rows(spec: dict[str, Any], sql: str) -> dict[str, Any]:

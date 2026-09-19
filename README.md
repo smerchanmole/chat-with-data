@@ -46,7 +46,7 @@ dataframe = conn.get_pandas_dataframe("SHOW DATABASES")
 conn.close()
 ```
 
-En **Configuración → Fuente de datos → Cloudera**, escribe el nombre exacto de la conexión que aparece en el widget de CML, por ejemplo `vast-data-demo`. La app llama directamente a `cmldata.get_connection(nombre)` y ejecuta `SHOW DATABASES`; no necesita una API para enumerar conexiones. El API Key ID y Value son opcionales: pueden utilizarse cuando la app necesite actuar con la identidad de un usuario concreto.
+En **Configuración → Fuente de datos → Cloudera**, escribe el nombre exacto de la conexión que aparece en el widget de CML, por ejemplo `vast-data-demo`, el usuario y su **Workload Password**. La app llama a `cmldata.get_connection(nombre, {"USERNAME": usuario, "PASSWORD": workload_password})` y ejecuta `SHOW DATABASES`; no utiliza API Key ni necesita una API para enumerar conexiones.
 
 ### Trino mediante JDBC URL
 
@@ -61,6 +61,8 @@ La URL se traduce al cliente Python de Trino. Si no incluye catálogo o esquema,
 ## Apariencia
 
 En **Configuración → Respuesta → Apariencia** se puede alternar entre tema oscuro y claro. La preferencia se conserva localmente en el navegador; las credenciales siguen siendo únicamente de sesión.
+
+El lateral derecho muestra las columnas perfiladas de cada tabla, incluidos tipo, nulos y cardinalidad de la muestra. Las tablas de resultados incluyen número de fila, las gráficas muestran ejes, escalas, etiquetas y hasta tres series, y los resultados geográficos se representan sobre un mapa Leaflet con cartografía de OpenStreetMap.
 
 ## Modelo LLM
 

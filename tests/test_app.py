@@ -1,4 +1,6 @@
 import unittest
+import sys
+from types import ModuleType
 from unittest.mock import Mock, patch
 
 from app import (
@@ -97,7 +99,7 @@ class TalkToDataTests(unittest.TestCase):
                 "connection": "direct",
                 "connection_spec": {
                     "engine": "cloudera", "name": "vast-data-demo",
-                    "api_key_id": "key-id", "cdsw_api_key": "secret-value",
+                    "username": "data-user", "workload_password": "secret-value",
                 },
             })
         self.assertEqual(response.status_code, 200)
@@ -105,7 +107,26 @@ class TalkToDataTests(unittest.TestCase):
         spec = databases.call_args.args[0]
         self.assertEqual(spec["name"], "vast-data-demo")
         self.assertEqual(spec["engine"], "cloudera")
-        self.assertEqual(spec["cdsw_api_key"], "secret-value")
+        self.assertEqual(spec["username"], "data-user")
+        self.assertEqual(spec["workload_password"], "secret-value")
+
+    def test_cml_uses_username_and_workload_password(self):
+        connection = Mock()
+        connection.get_pandas_dataframe.return_value = "frame"
+        data_v1 = ModuleType("cml.data_v1")
+        data_v1.get_connection = Mock(return_value=connection)
+        cml_package = ModuleType("cml")
+        cml_package.data_v1 = data_v1
+        with patch.dict(sys.modules, {"cml": cml_package, "cml.data_v1": data_v1}):
+            result = catalog._cml_query({
+                "name": "vast-data-demo", "username": "data-user",
+                "workload_password": "workload-secret",
+            }, "SHOW DATABASES")
+        self.assertEqual(result, "frame")
+        data_v1.get_connection.assert_called_once_with(
+            "vast-data-demo", {"USERNAME": "data-user", "PASSWORD": "workload-secret"},
+        )
+        connection.close.assert_called_once()
 
     def test_postgresql_parameters_and_database_discovery(self):
         spec = {
