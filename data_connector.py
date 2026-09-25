@@ -108,7 +108,11 @@ class DataCatalog:
     def query(self, spec: dict[str, Any], sql: str, limit: int = 500) -> dict[str, Any]:
         self._assert_read_only(sql)
         bounded = sql.strip().rstrip(";")
-        if not re.search(r"\blimit\s+\d+\s*$", bounded, re.I):
+        trailing_limit = re.search(r"\blimit\s+(\d+)(\s+offset\s+\d+)?\s*$", bounded, re.I)
+        if trailing_limit:
+            if int(trailing_limit.group(1)) > limit:
+                bounded = bounded[:trailing_limit.start(1)] + str(limit) + bounded[trailing_limit.end(1):]
+        else:
             bounded = f"{bounded} LIMIT {int(limit)}"
         if spec.get("demo") or spec.get("engine") == "sqlite":
             with sqlite3.connect(self.demo_path) as conn:
@@ -246,6 +250,8 @@ class DataCatalog:
 
     @staticmethod
     def _assert_read_only(sql: str) -> None:
+        if "--" in sql or "/*" in sql or "*/" in sql:
+            raise ValueError("No se permiten comentarios SQL en las consultas generadas.")
         normalized = re.sub(r"/\*.*?\*/|--[^\n]*", " ", sql, flags=re.S).strip()
         if not re.match(r"^(select|with|show|describe|desc|explain)\b", normalized, re.I):
             raise ValueError("Solo se permiten consultas de lectura.")

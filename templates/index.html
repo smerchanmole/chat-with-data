@@ -1,153 +1,55 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#07111f">
-  <title>Talk to Data</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f"><title>Talk to Data</title>
   <script>document.documentElement.dataset.theme=localStorage.getItem('ttd-theme')||'dark'</script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
   <div class="app-shell">
-    <aside class="sidebar glass">
-      <a class="brand" href="#" aria-label="Talk to Data, inicio">
-        <span class="brand-mark"><i></i><i></i><i></i></span>
-        <span><b>Talk to Data</b><small>Conversational analytics</small></span>
-      </a>
-      <button id="new-chat" class="new-chat"><span>＋</span><span data-i18n="new_chat">Nueva conversación</span></button>
-      <div class="nav-label" data-i18n="workspace">ESPACIO DE TRABAJO</div>
-      <nav class="main-nav">
-        <button class="nav-item active" data-view="chat"><span class="nav-icon">⌁</span><span data-i18n="chat">Conversación</span><i></i></button>
-        <button class="nav-item" data-open-settings><span class="nav-icon">⌘</span><span data-i18n="settings">Configuración</span></button>
-      </nav>
-      <div class="history-block">
-        <div class="nav-label"><span data-i18n="recent">RECIENTES</span><button id="clear-history" title="Borrar historial">×</button></div>
-        <div id="history-list" class="history-list"><p class="muted-small">Aún no hay preguntas</p></div>
+    <aside class="sidebar glass" aria-label="Navegación principal">
+      <a class="brand" href="/" aria-label="Talk to Data, inicio"><span class="brand-mark"><i></i><i></i><i></i></span><span><b>Talk to Data</b><small>Conversational analytics</small></span></a>
+      <div class="sidebar-actions"><button id="new-chat" class="new-chat" type="button">＋ Nuevo chat</button><button id="new-connection" class="side-create" type="button">＋ Conexión</button><button id="new-model" class="side-create" type="button">＋ Modelo</button></div>
+      <nav class="main-nav" aria-label="Secciones"><button class="nav-item active" type="button" data-view="chat"><span class="nav-icon">⌁</span> Chats</button><button class="nav-item" type="button" data-view="connections"><span class="nav-icon">▦</span> Conexiones</button><button class="nav-item" type="button" data-view="models"><span class="nav-icon">✦</span> Modelos</button></nav>
+      <div class="sidebar-lists">
+        <section><h2>CHATS <span id="chat-count">0</span></h2><div id="chat-list" class="sidebar-list"></div></section>
+        <section><h2>CONEXIONES <span id="connection-count">0</span></h2><div id="connection-list" class="sidebar-list"></div></section>
+        <section><h2>MODELOS <span id="model-count">0</span></h2><div id="model-list" class="sidebar-list"></div></section>
       </div>
-      <div class="sidebar-foot">
-        <div class="connection-mini"><span class="pulse"></span><div><small data-i18n="data_source">FUENTE DE DATOS</small><b id="mini-source">Demo · Retail</b></div></div>
-        <button class="avatar" data-open-settings aria-label="Abrir configuración">SM</button>
-      </div>
+      <div class="sidebar-foot"><span>Datos y credenciales de esta sesión</span><button id="open-preferences" class="icon-button" type="button" aria-label="Preferencias">⚙</button></div>
     </aside>
-
     <main class="workspace">
-      <header class="topbar">
-        <div><div class="crumb"><span data-i18n="workspace">Espacio de trabajo</span><b>/</b><strong data-i18n="analysis">Análisis</strong></div><h1 data-i18n="conversation">Conversación</h1></div>
-        <div class="top-actions">
-          <div id="source-pill" class="source-pill"><span class="pulse"></span><span>talk-to-data-demo</span><small>2 tablas</small></div>
-          <button class="icon-button" data-open-settings title="Configuración" aria-label="Configuración">⚙</button>
-        </div>
-      </header>
-
-      <section id="chat-stream" class="chat-stream" aria-label="Conversación" aria-live="polite" tabindex="0">
-        <div id="welcome" class="welcome">
-          <div class="spark-logo"><span>✦</span></div>
-          <p class="eyebrow">AI DATA ASSISTANT</p>
-          <h2><span data-i18n="hello">Hola, soy tu analista.</span><br><em data-i18n="question_prompt">¿Qué quieres saber?</em></h2>
-          <p class="welcome-copy" data-i18n="welcome_copy">Pregunta en lenguaje natural. Prepararé la consulta, analizaré los resultados y elegiré la mejor forma de explicarlos.</p>
-          <div class="suggestion-grid">
-            <button class="suggestion" data-question="¿Cómo han evolucionado los ingresos por mes?"><span class="suggestion-icon coral">↗</span><span><b data-i18n="trend">Analiza una tendencia</b><small>¿Cómo han evolucionado los ingresos por mes?</small></span><span>→</span></button>
-            <button class="suggestion" data-question="Compara los ingresos por categoría"><span class="suggestion-icon violet">≋</span><span><b data-i18n="compare">Compara categorías</b><small>Compara los ingresos por categoría</small></span><span>→</span></button>
-            <button class="suggestion" data-question="Muéstrame las ventas por ciudad en un mapa"><span class="suggestion-icon cyan">⌖</span><span><b data-i18n="map_data">Sitúa los datos</b><small>Muéstrame las ventas por ciudad en un mapa</small></span><span>→</span></button>
-          </div>
-        </div>
-      </section>
-
-      <footer class="composer-wrap">
-        <form id="ask-form" class="composer glass">
-          <textarea id="question" rows="1" maxlength="2000" placeholder="Pregunta algo sobre tus datos…" aria-label="Pregunta"></textarea>
-          <div class="composer-tools">
-            <div><button id="mic-button" type="button" class="tool-button" title="Dictar pregunta">◉</button><span id="mic-status"></span></div>
-            <div class="send-hint"><span><kbd>↵</kbd> enviar · <kbd>⇧↵</kbd> nueva línea</span><button id="send-button" type="submit" aria-label="Enviar pregunta">↑</button></div>
-          </div>
-        </form>
-        <p class="disclaimer" data-i18n="disclaimer">La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.</p>
-      </footer>
-    </main>
-
-    <aside class="context-panel glass">
-      <div class="context-head"><div><p class="eyebrow">CONTEXTO ACTIVO</p><h2 data-i18n="data_context">Contexto de datos</h2></div><button class="icon-button" data-open-settings>•••</button></div>
-      <div class="context-section"><p class="context-label" data-i18n="connection">CONEXIÓN</p><div class="context-card connection-card"><span class="db-icon">◫</span><div><b id="context-connection">talk-to-data-demo</b><small id="context-engine">SQLite · Conectado</small></div><span class="pulse"></span></div></div>
-      <div class="context-section"><div class="context-label row"><span data-i18n="selected_tables">TABLAS SELECCIONADAS</span><b id="table-count">2</b></div><div id="context-tables" class="table-list"></div><button class="text-button" data-open-settings>＋ <span data-i18n="manage_tables">Gestionar tablas</span></button></div>
-      <div class="context-section schema-section"><div class="context-label row"><span>COLUMNAS DISPONIBLES</span><b id="column-count">0</b></div><div id="context-columns" class="schema-list"><p class="muted-small">Analiza las tablas para ver su esquema.</p></div></div>
-      <div class="context-section"><p class="context-label" data-i18n="answer_modules">MÓDULOS DE RESPUESTA</p><div id="active-modules" class="module-chips"></div></div>
-      <div class="context-note"><span>✦</span><p><b data-i18n="memory_on">Memoria activa</b><br><small data-i18n="memory_copy">Usaré las últimas preguntas para comprender referencias y comparaciones.</small></p></div>
-    </aside>
-  </div>
-
-  <dialog id="settings-dialog">
-    <form method="dialog" class="settings-shell">
-      <aside class="settings-nav">
-        <div><p class="eyebrow">WORKSPACE SETUP</p><h2 data-i18n="settings">Configuración</h2><p data-i18n="settings_copy">Conecta tus datos y define cómo quieres recibir las respuestas.</p></div>
-        <nav><button type="button" class="step-link active" data-step="data"><b>1</b><span><strong data-i18n="data_source">Fuente de datos</strong><small>Conexión, tablas y perfil</small></span></button><button type="button" class="step-link" data-step="model"><b>2</b><span><strong>Modelo LLM</strong><small>Endpoint y autenticación</small></span></button><button type="button" class="step-link" data-step="response"><b>3</b><span><strong data-i18n="answer">Respuesta</strong><small>Módulos e idiomas</small></span></button></nav>
-        <div class="secure-note">◆ <span><b>Conexión segura</b><small>Los secretos permanecen en esta sesión.</small></span></div>
-      </aside>
-      <div class="settings-content">
-        <header><div><p id="step-kicker" class="eyebrow">PASO 1 DE 3</p><h2 id="step-title">Conecta una fuente de datos</h2></div><button class="close-button" value="cancel" aria-label="Cerrar">×</button></header>
-        <section class="settings-step active" data-step-panel="data">
-          <div class="model-context-panel">
-            <div class="section-heading compact"><div><h3>Contexto e instrucciones para el modelo</h3><p>Se completa con el profiling. Puedes editarlo y añadir tus preferencias para todas las preguntas de esta sesión.</p></div><span class="secure-inline">✦ Editable</span></div>
-            <textarea id="model-context" rows="6" maxlength="12000" placeholder="Después del profiling aparecerán aquí las tablas y columnas. Añade, por ejemplo: responde siempre en español; trata sale_date como DATE; responde de forma esquemática con puntos."></textarea>
-            <small class="context-help">Este texto se enviará al modelo junto con el esquema estructurado y la memoria de la conversación.</small>
-          </div>
-          <fieldset class="connector-picker">
-            <legend>Motor de datos</legend>
-            <label><input type="radio" name="connection-mode" value="postgresql" checked><span class="connector-mark">PG</span><span><b>PostgreSQL</b><small>URL y credenciales</small></span></label>
-            <label><input type="radio" name="connection-mode" value="cloudera"><span class="connector-mark">CDP</span><span><b>Cloudera</b><small>Conexión registrada</small></span></label>
-            <label><input type="radio" name="connection-mode" value="trino"><span class="connector-mark">TR</span><span><b>Trino</b><small>Virtual Warehouse</small></span></label>
-          </fieldset>
-          <div class="connection-route" aria-label="Ruta de conexión"><span class="active">1 · Motor</span><i></i><span class="active">2 · Credenciales</span><i></i><span>3 · Base de datos</span></div>
-          <div id="postgresql-fields" class="subpanel connector-fields">
-            <div class="section-heading compact"><div><h3>Conexión PostgreSQL</h3><p>Usaremos la base inicial para descubrir las demás bases accesibles.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
-            <label class="wide">URL del servidor<input id="postgres-url" inputmode="url" autocomplete="off" placeholder="postgresql://postgres.example.com:5432?sslmode=require"></label>
-            <div class="field-row"><label>Base de datos inicial<input id="postgres-database" autocomplete="off" placeholder="postgres"></label><label>Usuario<input id="postgres-user" autocomplete="username" placeholder="analyst"></label></div>
-            <label class="wide">Contraseña<input id="postgres-password" type="password" autocomplete="current-password" placeholder="Contraseña del usuario"></label>
-          </div>
-          <div id="cloudera-fields" class="subpanel connector-fields" hidden>
-            <div class="section-heading compact"><div><h3>Conexión registrada en Cloudera</h3><p>Escribe el nombre exacto que aparece en el widget de conexiones de CML.</p></div><span class="secure-inline">◆ CML</span></div>
-            <label class="wide">Nombre de la conexión<input id="cloudera-connection-name" autocomplete="off" placeholder="vast-data-demo"></label>
-            <div class="field-row"><label>Usuario de Cloudera<input id="cloudera-user" autocomplete="username" placeholder="usuario"></label><label>Workload Password<input id="cloudera-workload-password" type="password" autocomplete="current-password" placeholder="Contraseña de workload"></label></div>
-            <p class="field-note">Se enviarán como USERNAME y PASSWORD únicamente al abrir la conexión con <code>cml.data_v1</code>.</p>
-          </div>
-          <div id="trino-fields" class="subpanel connector-fields" hidden>
-            <div class="section-heading compact"><div><h3>Conexión Trino</h3><p>La URL puede incluir el catálogo y el esquema de tu Virtual Warehouse.</p></div><span class="secure-inline">◆ Solo esta sesión</span></div>
-            <label class="wide">JDBC URL<input id="trino-url" autocomplete="off" placeholder="jdbc:trino://warehouse.environment.dwx.company.com:443/catalog/schema"></label>
-            <div class="field-row"><label>Usuario<input id="trino-user" autocomplete="username" placeholder="usuario"></label><label>Contraseña <span>(opcional)</span><input id="trino-password" type="password" autocomplete="current-password"></label></div>
-          </div>
-          <div class="connect-row"><button id="connect-data-source" type="button" class="primary-button">Conectar y descubrir bases de datos</button><span id="connection-status" class="inline-status">La fuente demo seguirá activa hasta que completes una conexión.</span></div>
-          <div class="field-row"><label>Base de datos / esquema<select id="database-select"><option value="">Selecciona primero una conexión</option></select></label><div class="status-box"><span id="db-status-dot"></span><div><small>ESTADO</small><b id="db-status">Pendiente</b></div></div></div>
-          <div class="section-heading"><div><h3>Selecciona las tablas</h3><p>Solo estas tablas formarán parte del contexto del modelo.</p></div><button id="toggle-all" type="button" class="text-button">Seleccionar todas</button></div>
-          <div id="table-picker" class="table-picker"><p class="empty-state">Elige una base de datos para descubrir sus tablas.</p></div>
-          <div class="profile-strip"><span class="profile-icon">✦</span><div><b>Perfilado inteligente</b><p>Analizaremos tipos, valores nulos, cardinalidad y ejemplos de hasta 100 filas.</p></div><button id="profile-button" type="button" class="primary-button">Analizar selección</button></div>
-          <div id="profile-status" class="inline-status"></div>
-        </section>
-        <section class="settings-step" data-step-panel="model">
-          <div class="field-row"><label class="wide">Endpoint compatible con OpenAI<input id="model-endpoint" type="url" placeholder="https://…/endpoints/modelo o …/v1/chat/completions"></label><label>Model ID <span>(vacío = autodetectar)</span><input id="model-name" placeholder="nvidia/nemotron-3-nano"></label></div>
-          <label>Método de autenticación<select id="auth-type"><option value="cdp">CDP token</option><option value="jwt">JWT token</option><option value="apikey">API Key ID + value</option></select></label>
-          <div id="token-fields"><label>Token<input id="model-token" type="password" autocomplete="off" placeholder="Pega el token de acceso"></label></div>
-          <div id="apikey-fields" class="field-row" hidden><label>API Key ID<input id="api-key-id" autocomplete="off"></label><label>API Key value<input id="api-key-value" type="password" autocomplete="off"></label></div>
-          <div class="test-row"><button id="test-model" type="button" class="secondary-button">Probar conexión</button><span id="model-status" class="inline-status"></span></div>
-        </section>
-        <section class="settings-step" data-step-panel="response">
-          <div class="section-heading"><div><h3>Construye la respuesta</h3><p>Activa solo los módulos que sean útiles para tu equipo.</p></div></div>
-          <div id="module-picker" class="module-picker">
-            <label><input type="checkbox" data-module="summary" checked><span>✦</span><b>Resumen</b><small>Interpretación breve del resultado</small></label>
-            <label><input type="checkbox" data-module="table" checked><span>▦</span><b>Tabla</b><small>Filas y columnas navegables</small></label>
-            <label><input type="checkbox" data-module="map" checked><span>⌖</span><b>Mapa</b><small>Si existen latitud y longitud</small></label>
-            <label><input type="checkbox" data-module="chart" checked><span>↗</span><b>Gráficas</b><small>Visualización elegida por el modelo</small></label>
-            <label><input type="checkbox" data-module="sql" checked><span>⌁</span><b>Consulta SQL</b><small>Lista para copiar y reutilizar</small></label>
-          </div>
-          <div class="field-row language-row interface-options"><label>Idioma de la aplicación<select id="ui-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Idioma de las respuestas<select id="model-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Apariencia<select id="ui-theme"><option value="dark">Oscura</option><option value="light">Clara</option></select></label></div>
-        </section>
-        <footer><span id="save-status">Los cambios se guardan en esta sesión.</span><div><button type="button" id="previous-step" class="secondary-button" hidden>Anterior</button><button type="button" id="next-step" class="primary-button">Continuar</button><button value="save" id="save-settings" class="primary-button" hidden>Guardar configuración</button></div></footer>
+      <header class="topbar"><div><div class="crumb">Espacio de trabajo <b>/</b> <strong id="view-crumb">Chats</strong></div><h1 id="view-title">Conversación</h1></div><div class="top-actions"><div id="active-badges" class="top-actions"></div><button id="context-toggle" class="icon-button" type="button" aria-label="Mostrar contexto del chat" aria-controls="context-panel" aria-expanded="false">▤</button></div></header>
+      <div id="view-chat" class="view-pane chat-pane">
+        <section id="chat-stream" class="chat-stream" aria-label="Conversación" tabindex="0"></section>
+        <footer class="composer-wrap"><form id="ask-form" class="composer glass"><label class="sr-only" for="question">Pregunta</label><textarea id="question" rows="1" maxlength="2000" placeholder="Pregunta algo sobre tus datos…"></textarea><div class="composer-tools"><div><button id="mic-button" type="button" class="tool-button" aria-label="Dictar pregunta" title="Dictar pregunta">◉</button><span id="mic-status"></span></div><div class="send-hint"><span>↵ enviar · ⇧↵ nueva línea</span><button id="send-button" type="submit" aria-label="Enviar pregunta">↑</button></div></div></form><p class="disclaimer">La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.</p></footer>
       </div>
-    </form>
-  </dialog>
+      <div id="view-connections" class="view-pane management-pane" hidden><div class="management-content">
+        <div class="management-intro"><p class="eyebrow">FUENTES DE DATOS</p><h2>Conexiones</h2><p>Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.</p></div>
+        <div id="connection-cards" class="catalog-cards"></div>
+        <form id="connection-form" class="editor-card" novalidate><h3>Nueva conexión</h3>
+          <div class="field-row"><label>Nombre para reconocerla<input id="connection-label" required maxlength="80" placeholder="Ventas de producción"></label><label>Tipo de conexión<select id="connection-engine"><option value="cloudera">Cloudera</option><option value="postgresql">PostgreSQL</option><option value="trino">Trino</option></select></label></div>
+          <div class="connector-fields" data-engine="cloudera"><div class="field-row"><label>Nombre registrado en CML<input id="cloudera-name" placeholder="vast-data-demo"></label><label>Motor SQL<select id="cloudera-dialect"><option value="impala">Impala</option><option value="hive">Hive</option></select></label></div><div class="field-row"><label>Usuario<input id="cloudera-user" autocomplete="username"></label><label>Workload Password<input id="cloudera-password" type="password" autocomplete="current-password"></label></div></div>
+          <div class="connector-fields" data-engine="postgresql" hidden><label>URL del servidor<input id="postgres-url" placeholder="postgresql://servidor:5432"></label><div class="field-row"><label>Base inicial<input id="postgres-database" placeholder="postgres"></label><label>Usuario<input id="postgres-user" autocomplete="username"></label></div><label>Contraseña<input id="postgres-password" type="password" autocomplete="current-password"></label></div>
+          <div class="connector-fields" data-engine="trino" hidden><label>JDBC URL<input id="trino-url" placeholder="jdbc:trino://warehouse:443/catalog/schema"></label><div class="field-row"><label>Usuario<input id="trino-user" autocomplete="username"></label><label>Contraseña <small>(opcional)</small><input id="trino-password" type="password" autocomplete="off"></label></div></div>
+          <div class="editor-actions"><button id="discover-connection" type="button" class="secondary-button">1 · Probar y descubrir bases</button><span id="connection-status" class="inline-status" role="status"></span></div>
+          <div id="connection-discovery" hidden><label>Base de datos / esquema<select id="connection-database"></select></label><div class="section-heading"><div><h3>Tablas disponibles</h3><p>Solo las elegidas estarán al alcance del modelo en este chat.</p></div><button id="select-all-tables" type="button" class="text-button">Seleccionar todas</button></div><div id="connection-tables" class="table-picker"></div><div class="editor-actions"><button id="save-connection" type="submit" class="primary-button">2 · Guardar y analizar tablas</button></div></div>
+        </form>
+      </div></div>
+      <div id="view-models" class="view-pane management-pane" hidden><div class="management-content">
+        <div class="management-intro"><p class="eyebrow">MODELOS LLM</p><h2>Modelos</h2><p>Configura el endpoint y pruébalo con una petición real antes de guardarlo.</p></div>
+        <div id="model-cards" class="catalog-cards"></div>
+        <form id="model-form" class="editor-card" novalidate><h3>Nuevo modelo</h3><div class="field-row"><label>Nombre para reconocerlo<input id="model-label" required maxlength="80" placeholder="Nemotron 3 Nano"></label><label>Model ID <small>(se puede autodetectar)</small><input id="model-name" placeholder="nvidia/nemotron-3-nano"></label></div><label>Endpoint<input id="model-endpoint" type="url" placeholder="https://…/endpoints/modelo"></label><label>Autenticación<select id="auth-type"><option value="cdp">CDP token</option><option value="jwt">JWT token</option><option value="apikey">API Key ID + Value</option></select></label><div id="token-fields"><label>Token<input id="model-token" type="password" autocomplete="off"></label></div><div id="apikey-fields" class="field-row" hidden><label>API Key ID<input id="api-key-id" autocomplete="off"></label><label>API Key Value<input id="api-key-value" type="password" autocomplete="off"></label></div><div class="editor-actions"><button id="test-model" type="button" class="secondary-button">1 · Probar modelo</button><span id="model-status" class="inline-status" role="status"></span></div><div class="editor-actions"><button id="save-model" type="submit" class="primary-button" disabled>2 · Guardar modelo probado</button></div></form>
+      </div></div>
+    </main>
+    <aside id="context-panel" class="context-panel glass" aria-label="Contexto del chat"><div class="context-head"><div><p class="eyebrow">CONTEXTO ACTIVO</p><h2>Este chat</h2></div><button id="context-close" class="icon-button" type="button" aria-label="Cerrar contexto">×</button></div><div id="context-empty" class="context-section"><p>Elige una conexión y un modelo para iniciar un chat.</p></div><div id="context-active" hidden><div class="context-section"><p class="context-label">CONEXIÓN</p><div class="context-card connection-card"><span class="db-icon">▦</span><div><b id="context-connection"></b><small id="context-database"></small></div></div></div><div class="context-section"><p class="context-label">MODELO</p><div class="context-card connection-card"><span class="db-icon">✦</span><div><b id="context-model"></b><small id="context-model-id"></small></div></div></div><div class="context-section"><div class="context-label row"><span>TABLAS Y COLUMNAS</span><b id="column-count">0</b></div><div id="context-columns" class="schema-list"></div></div><div class="context-section"><label class="context-label" for="model-context">INSTRUCCIONES ADICIONALES</label><textarea id="model-context" rows="5" placeholder="Ej.: responde siempre en español; trata las fechas como DATE"></textarea><small>Se aplican solo a este chat.</small></div><div class="context-section"><p class="context-label">MÓDULOS DE RESPUESTA</p><div id="active-modules" class="module-chips"></div></div></div></aside>
+  </div>
+  <dialog id="new-chat-dialog"><form id="new-chat-form" class="compact-dialog" method="dialog"><header><div><p class="eyebrow">NUEVA CONVERSACIÓN</p><h2>Prepara tu chat</h2><p>El chat quedará ligado a esta conexión y este modelo.</p></div><button type="button" data-close-dialog aria-label="Cerrar">×</button></header><label>Conexión<select id="chat-connection"></select></label><label>Modelo<select id="chat-model"></select></label><div id="chat-selection-preview" class="selection-preview"></div><p id="chat-create-status" class="inline-status" role="status"></p><footer><button type="button" class="secondary-button" data-close-dialog>Cancelar</button><button id="create-chat" type="submit" class="primary-button">Crear y analizar datos</button></footer></form></dialog>
+  <dialog id="preferences-dialog"><form id="preferences-form" class="compact-dialog" method="dialog"><header><div><p class="eyebrow">PREFERENCIAS</p><h2>Cómo responder</h2></div><button type="button" data-close-dialog aria-label="Cerrar">×</button></header><fieldset class="preference-modules"><legend>Módulos</legend><label><input type="checkbox" data-module="summary" checked> Resumen</label><label><input type="checkbox" data-module="table" checked> Tabla</label><label><input type="checkbox" data-module="chart" checked> Gráfica</label><label><input type="checkbox" data-module="map" checked> Mapa</label><label><input type="checkbox" data-module="sql" checked> SQL</label></fieldset><label>Idioma de la aplicación<select id="ui-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Idioma de las respuestas<select id="model-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Apariencia<select id="ui-theme"><option value="dark">Oscura</option><option value="light">Clara</option></select></label><footer><button type="button" class="secondary-button" data-close-dialog>Cancelar</button><button type="submit" class="primary-button">Guardar preferencias</button></footer></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous" defer></script>
-  <script src="/static/app.js?v=4" defer></script>
-</body>
-</html>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/static/app.js?v=5" defer></script>
+</body></html>

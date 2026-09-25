@@ -1,353 +1,554 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-
 const state = {
-  connections: [], connection: 'talk-to-data-demo', connectionSpec: null, database: 'demo',
-  tables: ['sales', 'stores'], profiles: [], step: 0,
-  modules: { summary: true, table: true, map: true, chart: true, sql: true },
-  model: { endpoint: '', model: '', auth_type: 'cdp', token: '', api_key_id: '', api_key_value: '' },
-  dataContext: sessionStorage.getItem('ttd-data-context') || '',
-  generatedContext: sessionStorage.getItem('ttd-generated-context') || '',
-  uiLanguage: localStorage.getItem('ttd-language') || 'es', modelLanguage: 'es',
+  workspace: { connections: [], models: [], chats: [] },
+  chatId: sessionStorage.getItem('ttd-chat-id') || '',
+  view: 'chat', connectionTicket: '', modelTicket: '', pendingConnection: 0, pendingTables: 0, pendingModel: 0,
+  modules: { summary: true, table: true, chart: true, map: true, sql: true },
   uiTheme: localStorage.getItem('ttd-theme') || 'dark',
+  uiLanguage: localStorage.getItem('ttd-language') || 'es',
+  modelLanguage: sessionStorage.getItem('ttd-model-language') || 'es',
+  chat: null, busy: false
 };
-
 const translations = {
-  es: { new_chat:'Nueva conversación', workspace:'Espacio de trabajo', chat:'Conversación', settings:'Configuración', recent:'RECIENTES', data_source:'FUENTE DE DATOS', analysis:'Análisis', conversation:'Conversación', hello:'Hola, soy tu analista.', question_prompt:'¿Qué quieres saber?', welcome_copy:'Pregunta en lenguaje natural. Prepararé la consulta, analizaré los resultados y elegiré la mejor forma de explicarlos.', trend:'Analiza una tendencia', compare:'Compara categorías', map_data:'Sitúa los datos', disclaimer:'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.', data_context:'Contexto de datos', connection:'CONEXIÓN', selected_tables:'TABLAS SELECCIONADAS', manage_tables:'Gestionar tablas', answer_modules:'MÓDULOS DE RESPUESTA', memory_on:'Memoria activa', memory_copy:'Usaré las últimas preguntas para comprender referencias y comparaciones.', settings_copy:'Conecta tus datos y define cómo quieres recibir las respuestas.', answer:'Respuesta' },
-  en: { new_chat:'New conversation', workspace:'Workspace', chat:'Conversation', settings:'Settings', recent:'RECENT', data_source:'DATA SOURCE', analysis:'Analysis', conversation:'Conversation', hello:'Hello, I am your analyst.', question_prompt:'What would you like to know?', welcome_copy:'Ask in natural language. I will prepare the query, analyze the results, and choose the best way to explain them.', trend:'Analyze a trend', compare:'Compare categories', map_data:'Map your data', disclaimer:'AI can make mistakes. Review the SQL query before making decisions.', data_context:'Data context', connection:'CONNECTION', selected_tables:'SELECTED TABLES', manage_tables:'Manage tables', answer_modules:'ANSWER MODULES', memory_on:'Memory active', memory_copy:'I will use recent questions to understand references and comparisons.', settings_copy:'Connect your data and define how you want answers.', answer:'Answer' },
-  it: { new_chat:'Nuova conversazione', workspace:'Area di lavoro', chat:'Conversazione', settings:'Impostazioni', recent:'RECENTI', data_source:'ORIGINE DATI', analysis:'Analisi', conversation:'Conversazione', hello:'Ciao, sono il tuo analista.', question_prompt:'Cosa vuoi sapere?', welcome_copy:'Fai una domanda in linguaggio naturale. Preparerò la query, analizzerò i risultati e sceglierò come spiegarli.', trend:'Analizza una tendenza', compare:'Confronta categorie', map_data:'Posiziona i dati', disclaimer:'L’IA può commettere errori. Controlla la query SQL.', data_context:'Contesto dati', connection:'CONNESSIONE', selected_tables:'TABELLE SELEZIONATE', manage_tables:'Gestisci tabelle', answer_modules:'MODULI RISPOSTA', memory_on:'Memoria attiva', memory_copy:'Userò le domande recenti per capire riferimenti e confronti.', settings_copy:'Collega i dati e definisci le risposte.', answer:'Risposta' },
-  de: { new_chat:'Neue Unterhaltung', workspace:'Arbeitsbereich', chat:'Unterhaltung', settings:'Einstellungen', recent:'ZULETZT', data_source:'DATENQUELLE', analysis:'Analyse', conversation:'Unterhaltung', hello:'Hallo, ich bin dein Analyst.', question_prompt:'Was möchtest du wissen?', welcome_copy:'Frage in natürlicher Sprache. Ich erstelle die Abfrage, analysiere die Ergebnisse und erkläre sie passend.', trend:'Trend analysieren', compare:'Kategorien vergleichen', map_data:'Daten verorten', disclaimer:'KI kann Fehler machen. Prüfe die SQL-Abfrage.', data_context:'Datenkontext', connection:'VERBINDUNG', selected_tables:'AUSGEWÄHLTE TABELLEN', manage_tables:'Tabellen verwalten', answer_modules:'ANTWORTMODULE', memory_on:'Gedächtnis aktiv', memory_copy:'Letzte Fragen helfen mir, Bezüge zu verstehen.', settings_copy:'Daten verbinden und Antworten festlegen.', answer:'Antwort' },
-  fr: { new_chat:'Nouvelle conversation', workspace:'Espace de travail', chat:'Conversation', settings:'Paramètres', recent:'RÉCENTS', data_source:'SOURCE DE DONNÉES', analysis:'Analyse', conversation:'Conversation', hello:'Bonjour, je suis votre analyste.', question_prompt:'Que voulez-vous savoir ?', welcome_copy:'Posez votre question en langage naturel. Je préparerai la requête, analyserai les résultats et choisirai la meilleure explication.', trend:'Analyser une tendance', compare:'Comparer les catégories', map_data:'Cartographier les données', disclaimer:'L’IA peut faire des erreurs. Vérifiez la requête SQL.', data_context:'Contexte des données', connection:'CONNEXION', selected_tables:'TABLES SÉLECTIONNÉES', manage_tables:'Gérer les tables', answer_modules:'MODULES DE RÉPONSE', memory_on:'Mémoire active', memory_copy:'J’utiliserai les questions récentes pour comprendre les références.', settings_copy:'Connectez vos données et définissez les réponses.', answer:'Réponse' },
+  en: {
+    '＋ Nuevo chat':'＋ New chat','＋ Conexión':'＋ Connection','＋ Modelo':'＋ Model','Chats':'Chats','Conexiones':'Connections','Modelos':'Models',
+    'Datos y credenciales de esta sesión':'Data and credentials for this session','Todavía no hay chats.':'No chats yet.','CONEXIONES':'CONNECTIONS','MODELOS':'MODELS','Espacio de trabajo':'Workspace',
+    'Una pregunta empieza':'A question starts','con los datos correctos.':'with the right data.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Create a chat and choose the connection and model. I will analyze the selected tables before your first question.','Crear un chat':'Create a chat','Pregunta':'Question','↵ enviar · ⇧↵ nueva línea':'↵ send · ⇧↵ new line','CONEXIÓN':'CONNECTION','MODELO':'MODEL','ANÁLISIS PRELIMINAR':'PRELIMINARY ANALYSIS','Ya conozco estas tablas':'I have analyzed these tables',
+    'Fuentes de datos':'Data sources','Modelos LLM':'LLM models','Conversación':'Conversation',
+    'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Test access, choose a database and select up to 12 tables. Profiling runs when you save.',
+    'Configura el endpoint y pruébalo con una petición real antes de guardarlo.':'Configure the endpoint and test it with a real request before saving.',
+    'Nueva conexión':'New connection','Nuevo modelo':'New model','Nombre para reconocerla':'Display name','Nombre para reconocerlo':'Display name',
+    'Tipo de conexión':'Connection type','Nombre registrado en CML':'CML registered name','Usuario':'User','Workload Password':'Workload Password',
+    'URL del servidor':'Server URL','Base inicial':'Initial database','Contraseña':'Password','Base de datos / esquema':'Database / schema',
+    'Tablas disponibles':'Available tables','Solo las elegidas estarán al alcance del modelo en este chat.':'Only selected tables will be available to the model in this chat.',
+    'Seleccionar todas':'Select all','1 · Probar y descubrir bases':'1 · Test and discover databases','2 · Guardar y analizar tablas':'2 · Save and profile tables',
+    'Model ID':'Model ID','Endpoint':'Endpoint','Autenticación':'Authentication','Token':'Token','1 · Probar modelo':'1 · Test model','2 · Guardar modelo probado':'2 · Save tested model',
+    'Prepara tu chat':'Set up your chat','El chat quedará ligado a esta conexión y este modelo.':'This chat will use this connection and model.','Conexión':'Connection','Modelo':'Model','Cancelar':'Cancel','Crear y analizar datos':'Create and analyze data',
+    'Cómo responder':'Response preferences','Módulos':'Modules','Resumen':'Summary','Tabla':'Table','Gráfica':'Chart','Mapa':'Map',
+    'Idioma de la aplicación':'App language','Idioma de las respuestas':'Response language','Apariencia':'Appearance','Guardar preferencias':'Save preferences',
+    'Este chat':'This chat','Elige una conexión y un modelo para iniciar un chat.':'Choose a connection and model to start a chat.','TABLAS Y COLUMNAS':'TABLES AND COLUMNS',
+    'INSTRUCCIONES ADICIONALES':'ADDITIONAL INSTRUCTIONS','MÓDULOS DE RESPUESTA':'RESPONSE MODULES','Se aplican solo a este chat.':'Applies only to this chat.',
+    'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'AI can make mistakes. Review the SQL before making decisions.','tablas':'tables','columnas perfiladas':'profiled columns','distintos':'distinct','Eliminar':'Delete','Modelo de demostración':'Demo model','Modelo local de demostración':'Local demo model','Modelo eliminado':'Deleted model','Crea primero una conexión y un modelo.':'Create a connection and model first.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'The demo model only supports demo data. Test and save a model for this connection.'
+  },
+  it: {
+    '＋ Nuevo chat':'＋ Nuova chat','＋ Conexión':'＋ Connessione','＋ Modelo':'＋ Modello','Chats':'Chat','Conexiones':'Connessioni','Modelos':'Modelli',
+    'Datos y credenciales de esta sesión':'Dati e credenziali di questa sessione','Todavía no hay chats.':'Nessuna chat.','CONEXIONES':'CONNESSIONI','MODELOS':'MODELLI','Espacio de trabajo':'Area di lavoro',
+    'Una pregunta empieza':'Una domanda inizia','con los datos correctos.':'con i dati giusti.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Crea una chat e scegli connessione e modello. Analizzerò le tabelle selezionate prima della prima domanda.','Crear un chat':'Crea una chat','Pregunta':'Domanda','↵ enviar · ⇧↵ nueva línea':'↵ invia · ⇧↵ nuova riga','CONEXIÓN':'CONNESSIONE','MODELO':'MODELLO','ANÁLISIS PRELIMINAR':'ANALISI PRELIMINARE','Ya conozco estas tablas':'Ho analizzato queste tabelle',
+    'Fuentes de datos':'Origini dati','Modelos LLM':'Modelli LLM','Conversación':'Conversazione',
+    'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Verifica l’accesso, scegli il database e fino a 12 tabelle. Il profilo viene creato al salvataggio.',
+    'Configura el endpoint y pruébalo con una petición real antes de guardarlo.':'Configura l’endpoint e provalo con una richiesta reale prima di salvarlo.',
+    'Nueva conexión':'Nuova connessione','Nuevo modelo':'Nuovo modello','Nombre para reconocerla':'Nome visualizzato','Nombre para reconocerlo':'Nome visualizzato',
+    'Tipo de conexión':'Tipo di connessione','Nombre registrado en CML':'Nome registrato in CML','Usuario':'Utente','URL del servidor':'URL del server','Base inicial':'Database iniziale','Contraseña':'Password','Base de datos / esquema':'Database / schema',
+    'Tablas disponibles':'Tabelle disponibili','Solo las elegidas estarán al alcance del modelo en este chat.':'Solo le tabelle selezionate saranno disponibili al modello in questa chat.',
+    'Seleccionar todas':'Seleziona tutte','1 · Probar y descubrir bases':'1 · Verifica e scopri i database','2 · Guardar y analizar tablas':'2 · Salva e analizza le tabelle',
+    'Autenticación':'Autenticazione','1 · Probar modelo':'1 · Prova il modello','2 · Guardar modelo probado':'2 · Salva il modello verificato',
+    'Prepara tu chat':'Prepara la chat','El chat quedará ligado a esta conexión y este modelo.':'La chat userà questa connessione e questo modello.','Conexión':'Connessione','Modelo':'Modello','Cancelar':'Annulla','Crear y analizar datos':'Crea e analizza i dati',
+    'Cómo responder':'Preferenze di risposta','Módulos':'Moduli','Resumen':'Riepilogo','Tabla':'Tabella','Gráfica':'Grafico','Mapa':'Mappa',
+    'Idioma de la aplicación':'Lingua dell’app','Idioma de las respuestas':'Lingua delle risposte','Apariencia':'Aspetto','Guardar preferencias':'Salva preferenze',
+    'Este chat':'Questa chat','Elige una conexión y un modelo para iniciar un chat.':'Scegli una connessione e un modello per iniziare.','TABLAS Y COLUMNAS':'TABELLE E COLONNE','INSTRUCCIONES ADICIONALES':'ISTRUZIONI AGGIUNTIVE','MÓDULOS DE RESPUESTA':'MODULI DI RISPOSTA','Se aplican solo a este chat.':'Si applicano solo a questa chat.',
+    'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA può sbagliare. Controlla la query SQL prima di decidere.','tablas':'tabelle','columnas perfiladas':'colonne profilate','distintos':'distinti','Eliminar':'Elimina','Modelo de demostración':'Modello demo','Modelo local de demostración':'Modello demo locale','Modelo eliminado':'Modello eliminato','Crea primero una conexión y un modelo.':'Crea prima una connessione e un modello.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Il modello demo supporta solo dati demo. Prova e salva un modello per questa connessione.'
+  },
+  de: {
+    '＋ Nuevo chat':'＋ Neuer Chat','＋ Conexión':'＋ Verbindung','＋ Modelo':'＋ Modell','Chats':'Chats','Conexiones':'Verbindungen','Modelos':'Modelle',
+    'Datos y credenciales de esta sesión':'Daten und Zugangsdaten dieser Sitzung','Todavía no hay chats.':'Noch keine Chats.','CONEXIONES':'VERBINDUNGEN','MODELOS':'MODELLE','Espacio de trabajo':'Arbeitsbereich',
+    'Una pregunta empieza':'Eine Frage beginnt','con los datos correctos.':'mit den richtigen Daten.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Erstelle einen Chat und wähle Verbindung und Modell. Ich analysiere die Tabellen vor deiner ersten Frage.','Crear un chat':'Chat erstellen','Pregunta':'Frage','↵ enviar · ⇧↵ nueva línea':'↵ senden · ⇧↵ neue Zeile','CONEXIÓN':'VERBINDUNG','MODELO':'MODELL','ANÁLISIS PRELIMINAR':'VORABANALYSE','Ya conozco estas tablas':'Diese Tabellen sind analysiert',
+    'Fuentes de datos':'Datenquellen','Modelos LLM':'LLM-Modelle','Conversación':'Unterhaltung',
+    'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Prüfe den Zugang, wähle die Datenbank und bis zu 12 Tabellen. Das Profil wird beim Speichern erstellt.',
+    'Configura el endpoint y pruébalo con una petición real antes de guardarlo.':'Konfiguriere den Endpunkt und teste ihn vor dem Speichern mit einer echten Anfrage.',
+    'Nueva conexión':'Neue Verbindung','Nuevo modelo':'Neues Modell','Nombre para reconocerla':'Anzeigename','Nombre para reconocerlo':'Anzeigename',
+    'Tipo de conexión':'Verbindungstyp','Nombre registrado en CML':'In CML registrierter Name','Usuario':'Benutzer','URL del servidor':'Server-URL','Base inicial':'Anfangsdatenbank','Contraseña':'Passwort','Base de datos / esquema':'Datenbank / Schema',
+    'Tablas disponibles':'Verfügbare Tabellen','Solo las elegidas estarán al alcance del modelo en este chat.':'Nur ausgewählte Tabellen sind für das Modell in diesem Chat verfügbar.',
+    'Seleccionar todas':'Alle auswählen','1 · Probar y descubrir bases':'1 · Datenbanken testen und finden','2 · Guardar y analizar tablas':'2 · Tabellen speichern und analysieren',
+    'Autenticación':'Authentifizierung','1 · Probar modelo':'1 · Modell testen','2 · Guardar modelo probado':'2 · Geprüftes Modell speichern',
+    'Prepara tu chat':'Chat einrichten','El chat quedará ligado a esta conexión y este modelo.':'Dieser Chat verwendet diese Verbindung und dieses Modell.','Conexión':'Verbindung','Modelo':'Modell','Cancelar':'Abbrechen','Crear y analizar datos':'Erstellen und Daten analysieren',
+    'Cómo responder':'Antworteinstellungen','Módulos':'Module','Resumen':'Zusammenfassung','Tabla':'Tabelle','Gráfica':'Diagramm','Mapa':'Karte',
+    'Idioma de la aplicación':'App-Sprache','Idioma de las respuestas':'Antwortsprache','Apariencia':'Darstellung','Guardar preferencias':'Einstellungen speichern',
+    'Este chat':'Dieser Chat','Elige una conexión y un modelo para iniciar un chat.':'Wähle eine Verbindung und ein Modell, um zu beginnen.','TABLAS Y COLUMNAS':'TABELLEN UND SPALTEN','INSTRUCCIONES ADICIONALES':'ZUSÄTZLICHE ANWEISUNGEN','MÓDULOS DE RESPUESTA':'ANTWORTMODULE','Se aplican solo a este chat.':'Gilt nur für diesen Chat.',
+    'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'KI kann Fehler machen. Prüfe die SQL-Abfrage vor Entscheidungen.','tablas':'Tabellen','columnas perfiladas':'profilierte Spalten','distintos':'verschiedene','Eliminar':'Löschen','Modelo de demostración':'Demomodell','Modelo local de demostración':'Lokales Demomodell','Modelo eliminado':'Gelöschtes Modell','Crea primero una conexión y un modelo.':'Erstelle zuerst eine Verbindung und ein Modell.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Das Demomodell unterstützt nur Demodaten. Teste und speichere ein Modell für diese Verbindung.'
+  },
+  fr: {
+    '＋ Nuevo chat':'＋ Nouveau chat','＋ Conexión':'＋ Connexion','＋ Modelo':'＋ Modèle','Chats':'Chats','Conexiones':'Connexions','Modelos':'Modèles',
+    'Datos y credenciales de esta sesión':'Données et identifiants de cette session','Todavía no hay chats.':'Aucun chat pour le moment.','CONEXIONES':'CONNEXIONS','MODELOS':'MODÈLES','Espacio de trabajo':'Espace de travail',
+    'Una pregunta empieza':'Une question commence','con los datos correctos.':'avec les bonnes données.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Créez un chat et choisissez la connexion et le modèle. J’analyserai les tables avant votre première question.','Crear un chat':'Créer un chat','Pregunta':'Question','↵ enviar · ⇧↵ nueva línea':'↵ envoyer · ⇧↵ nouvelle ligne','CONEXIÓN':'CONNEXION','MODELO':'MODÈLE','ANÁLISIS PRELIMINAR':'ANALYSE PRÉLIMINAIRE','Ya conozco estas tablas':'J’ai analysé ces tables',
+    'Fuentes de datos':'Sources de données','Modelos LLM':'Modèles LLM','Conversación':'Conversation',
+    'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Testez l’accès, choisissez la base de données et jusqu’à 12 tables. Le profil est créé à l’enregistrement.',
+    'Configura el endpoint y pruébalo con una petición real antes de guardarlo.':'Configurez le point de terminaison et testez-le avec une vraie requête avant l’enregistrement.',
+    'Nueva conexión':'Nouvelle connexion','Nuevo modelo':'Nouveau modèle','Nombre para reconocerla':'Nom affiché','Nombre para reconocerlo':'Nom affiché',
+    'Tipo de conexión':'Type de connexion','Nombre registrado en CML':'Nom enregistré dans CML','Usuario':'Utilisateur','URL del servidor':'URL du serveur','Base inicial':'Base initiale','Contraseña':'Mot de passe','Base de datos / esquema':'Base / schéma',
+    'Tablas disponibles':'Tables disponibles','Solo las elegidas estarán al alcance del modelo en este chat.':'Seules les tables sélectionnées seront accessibles au modèle dans ce chat.',
+    'Seleccionar todas':'Tout sélectionner','1 · Probar y descubrir bases':'1 · Tester et découvrir les bases','2 · Guardar y analizar tablas':'2 · Enregistrer et analyser les tables',
+    'Autenticación':'Authentification','1 · Probar modelo':'1 · Tester le modèle','2 · Guardar modelo probado':'2 · Enregistrer le modèle testé',
+    'Prepara tu chat':'Préparer le chat','El chat quedará ligado a esta conexión y este modelo.':'Ce chat utilisera cette connexion et ce modèle.','Conexión':'Connexion','Modelo':'Modèle','Cancelar':'Annuler','Crear y analizar datos':'Créer et analyser les données',
+    'Cómo responder':'Préférences de réponse','Módulos':'Modules','Resumen':'Résumé','Tabla':'Tableau','Gráfica':'Graphique','Mapa':'Carte',
+    'Idioma de la aplicación':'Langue de l’application','Idioma de las respuestas':'Langue des réponses','Apariencia':'Apparence','Guardar preferencias':'Enregistrer les préférences',
+    'Este chat':'Ce chat','Elige una conexión y un modelo para iniciar un chat.':'Choisissez une connexion et un modèle pour commencer.','TABLAS Y COLUMNAS':'TABLES ET COLONNES','INSTRUCCIONES ADICIONALES':'INSTRUCTIONS SUPPLÉMENTAIRES','MÓDULOS DE RESPUESTA':'MODULES DE RÉPONSE','Se aplican solo a este chat.':'S’applique uniquement à ce chat.',
+    'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
+  }
 };
-
-async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
-  const payload = await response.json().catch(() => ({ ok:false, error:'Respuesta no válida del servidor' }));
-  if (!response.ok || !payload.ok) throw new Error(payload.error || `Error ${response.status}`);
-  return payload.data;
-}
-
-function activeConnectionPayload() {
-  if (state.connectionSpec) return { connection:'direct', connection_spec:state.connectionSpec };
-  return { connection:state.connection };
+const originalText = new WeakMap();
+function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
+function translateStatic() {
+  const map = translations[state.uiLanguage] || {};
+  const roots = ['.sidebar-actions','.main-nav','.sidebar-foot','.sidebar-lists section > h2','.management-intro','#connection-form','#model-form','#new-chat-dialog','#preferences-dialog','.context-head','#context-empty','#context-active','.disclaimer','.welcome','.crumb','.composer-wrap'];
+  for(const selector of roots) {
+    for(const root of $$(selector)) {
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      while(walker.nextNode()) {
+        const node=walker.currentNode;
+        if(!originalText.has(node))originalText.set(node,node.nodeValue);
+        const original=originalText.get(node),key=original.trim();
+        if(key && map[key])node.nodeValue=original.replace(key,map[key]);
+        else node.nodeValue=original;
+      }
+    }
+  }
+  one('question').placeholder=({es:'Pregunta algo sobre tus datos…',en:'Ask about your data…',it:'Chiedi qualcosa sui tuoi dati…',de:'Frage etwas zu deinen Daten…',fr:'Posez une question sur vos données…'})[state.uiLanguage]||'Pregunta algo sobre tus datos…';
+  one('model-context').placeholder=({es:'Ej.: responde siempre en español; trata las fechas como DATE',en:'E.g. always answer in English; treat dates as DATE',it:'Es.: rispondi in italiano; tratta le date come DATE',de:'Z. B. antworte auf Deutsch; behandle Datumswerte als DATE',fr:'Ex. : réponds en français ; traite les dates comme DATE'})[state.uiLanguage];
+  one('context-toggle').setAttribute('aria-label',({es:'Mostrar contexto del chat',en:'Show chat context',it:'Mostra il contesto della chat',de:'Chatkontext anzeigen',fr:'Afficher le contexte du chat'})[state.uiLanguage]);
+  one('open-preferences').setAttribute('aria-label',({es:'Preferencias',en:'Preferences',it:'Preferenze',de:'Einstellungen',fr:'Préférences'})[state.uiLanguage]);
+  one('question').setAttribute('aria-label',({es:'Pregunta',en:'Question',it:'Domanda',de:'Frage',fr:'Question'})[state.uiLanguage]);
+  document.documentElement.lang=state.uiLanguage;
 }
 
 function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 }
-
+async function api(path, options = {}) {
+  const response = await fetch(path, { headers:{'Content-Type':'application/json'}, ...options });
+  const payload = await response.json().catch(() => ({ok:false,error:'Respuesta no válida del servidor.'}));
+  if (!response.ok || !payload.ok) throw new Error(payload.error || 'Error ' + response.status);
+  return payload.data;
+}
 function toast(message, error = false) {
-  const node = $('#toast'); node.textContent = message; node.className = error ? 'show error' : 'show';
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => node.className = '', 3200);
+  const el = $('#toast'); el.textContent = message; el.className = error ? 'show error' : 'show';
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { el.className = ''; }, 4200);
 }
-
-function applyLanguage() {
-  const dict = translations[state.uiLanguage] || translations.es;
-  $$('[data-i18n]').forEach(node => { if (dict[node.dataset.i18n]) node.textContent = dict[node.dataset.i18n]; });
-  document.documentElement.lang = state.uiLanguage;
-  localStorage.setItem('ttd-language', state.uiLanguage);
+function status(selector, message, error = false) {
+  const el = $(selector); el.textContent = message; el.className = 'inline-status ' + (error ? 'error' : 'success');
 }
+function one(id) { return document.getElementById(id); }
+function value(id) { return one(id).value.trim(); }
+function post(path, body) { return api(path, {method:'POST', body:JSON.stringify(body)}); }
+function connectionById(id) { return state.workspace.connections.find(item => item.id === id); }
+function modelById(id) { return state.workspace.models.find(item => item.id === id); }
+function chatById(id) { return state.workspace.chats.find(item => item.id === id); }
 
-function applyTheme() {
-  document.documentElement.dataset.theme = state.uiTheme;
-  localStorage.setItem('ttd-theme', state.uiTheme);
-  document.querySelector('meta[name="theme-color"]').content = state.uiTheme === 'light' ? '#f3f5f8' : '#07111f';
+async function refreshWorkspace() {
+  state.workspace = await api('/api/workspace');
+  renderSidebar(); renderCatalogs(); renderChatSelectors(); renderContext();
 }
-
-async function initialize() {
-  applyLanguage();
-  applyTheme();
-  $('#model-context').value = state.dataContext;
+function setView(view) {
+  state.view = view;
+  one('context-panel').classList.remove('open');one('context-toggle').setAttribute('aria-expanded','false');
+  for (const name of ['chat','connections','models']) one('view-' + name).hidden = name !== view;
+  $$('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+  const labels = {chat:['Chats','Conversación'],connections:['Conexiones','Fuentes de datos'],models:['Modelos','Modelos LLM']};
+  const map=translations[state.uiLanguage]||{};
+  one('view-crumb').textContent = map[labels[view][0]]||labels[view][0]; one('view-title').textContent = map[labels[view][1]]||labels[view][1];
+  translateStatic();
+  if (view === 'chat') renderContext();
+}
+function listItem(item, kind, secondary, active = false) {
+  const label = escapeHtml(item.label || item.title);
+  return '<div class="sidebar-record' + (active ? ' selected' : '') + '">' +
+    '<button type="button" data-open-' + kind + '="' + escapeHtml(item.id) + '" title="' + label + '">' +
+    '<strong>' + label + '</strong><small>' + escapeHtml(secondary) + '</small></button>' +
+    (item.id === 'demo' ? '' : '<button type="button" class="record-delete" data-delete-' + kind + '="' + escapeHtml(item.id) + '" aria-label="Eliminar ' + label + '" title="Eliminar">×</button>') +
+    '</div>';
+}
+function renderSidebar() {
+  one('chat-count').textContent = state.workspace.chats.length;
+  one('connection-count').textContent = state.workspace.connections.length;
+  one('model-count').textContent = state.workspace.models.length;
+  one('chat-list').innerHTML = state.workspace.chats.map(item => listItem(item,'chat',connectionById(item.connection_id)?.label || 'Conexión eliminada',item.id === state.chatId)).join('') || '<p class="muted-small">'+escapeHtml((translations[state.uiLanguage]||{})['Todavía no hay chats.']||'Todavía no hay chats.')+'</p>';
+  one('connection-list').innerHTML = state.workspace.connections.map(item => listItem(item,'connection',item.database + ' · ' + item.tables.length + ' tablas')).join('');
+  one('model-list').innerHTML = state.workspace.models.map(item => listItem(item.id==='demo'?{...item,label:t('Modelo de demostración')}:item,'model',item.model)).join('');
+}
+function renderCatalogs() {
+  one('connection-cards').innerHTML = state.workspace.connections.map(item => '<article class="catalog-card"><div><span class="card-kicker">' + escapeHtml(item.database) + '</span><h3>' + escapeHtml(item.label) + '</h3><p>' + item.tables.length + ' '+t('tablas')+' · ' + item.profiles.reduce((sum,p) => sum + p.columns.length,0) + ' '+t('columnas perfiladas')+'</p></div>' + (item.id === 'demo' ? '<span class="builtin-badge">Demo</span>' : '<button type="button" class="secondary-button" data-delete-connection="' + escapeHtml(item.id) + '">'+t('Eliminar')+'</button>') + '</article>').join('');
+  one('model-cards').innerHTML = state.workspace.models.map(item => '<article class="catalog-card"><div><span class="card-kicker">' + escapeHtml(item.model) + '</span><h3>' + escapeHtml(item.id==='demo'?t('Modelo de demostración'):item.label) + '</h3><p>' + escapeHtml(item.endpoint || t('Modelo local de demostración')) + '</p></div>' + (item.id === 'demo' ? '<span class="builtin-badge">Demo</span>' : '<button type="button" class="secondary-button" data-delete-model="' + escapeHtml(item.id) + '">'+t('Eliminar')+'</button>') + '</article>').join('');
+}
+function renderChatSelectors() {
+  const previousConnection = value('chat-connection'), previousModel = value('chat-model');
+  one('chat-connection').innerHTML = state.workspace.connections.map(item => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.label) + ' · ' + escapeHtml(item.database) + '</option>').join('');
+  if (connectionById(previousConnection)) one('chat-connection').value = previousConnection;
+  one('chat-model').innerHTML = state.workspace.models.map(item => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.id==='demo'?t('Modelo de demostración'):item.label) + '</option>').join('');
+  if (modelById(previousModel)) one('chat-model').value = previousModel;
+  if (value('chat-connection') !== 'demo' && value('chat-model') === 'demo') {
+    const usable = state.workspace.models.find(item => item.id !== 'demo');
+    if (usable) one('chat-model').value = usable.id;
+  }
+  const connection = connectionById(value('chat-connection')), model = modelById(value('chat-model'));
+  const incompatible = connection && model && model.id === 'demo' && connection.id !== 'demo';
+  one('chat-selection-preview').textContent = incompatible ? t('El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.') : connection && model ? connection.tables.length + ' '+t('tablas')+' · ' + connection.database + ' · ' + model.model : t('Crea primero una conexión y un modelo.');
+  one('create-chat').disabled = !connection || !model || incompatible;
+}
+function renderContext() {
+  const item = chatById(state.chatId), connection = item && connectionById(item.connection_id), model = item && modelById(item.model_id);
+  one('context-empty').hidden = !!item; one('context-active').hidden = !item;
+  one('active-badges').innerHTML = item ? '<span class="source-pill">' + escapeHtml(connection?.label || 'Conexión eliminada') + '</span><span class="source-pill">' + escapeHtml(model?.id==='demo'?t('Modelo de demostración'):model?.label || t('Modelo eliminado')) + '</span>' : '';
+  one('question').disabled = !item || !connection || !model || state.busy;
+  one('send-button').disabled = one('question').disabled;
+  if (!item) return;
+  one('context-connection').textContent = connection?.label || 'Conexión eliminada';
+  one('context-database').textContent = connection?.database || 'No disponible';
+  one('context-model').textContent = model?.id==='demo'?t('Modelo de demostración'):model?.label || t('Modelo eliminado');
+  one('context-model-id').textContent = model?.model || 'No disponible';
+  const profiles = connection?.profiles || [];
+  one('column-count').textContent = profiles.reduce((sum,p) => sum + p.columns.length,0);
+  one('context-columns').innerHTML = profiles.map((profile,index) => '<details class="schema-table"' + (index === 0 ? ' open' : '') + '><summary><b>' + escapeHtml(profile.table) + '</b><small>' + profile.columns.length + '</small></summary><div>' + profile.columns.map(column => '<div class="schema-column" title="' + escapeHtml((column.examples || []).join(' · ')) + '"><span><b>' + escapeHtml(column.name) + '</b><small>' + escapeHtml(column.type) + '</small></span><em>' + column.unique + ' '+t('distintos')+'</em></div>').join('') + '</div></details>').join('');
+  one('model-context').value = sessionStorage.getItem('ttd-context-' + item.id) || '';
+  one('active-modules').innerHTML = Object.entries(state.modules).filter(([,on]) => on).map(([name]) => '<span>' + t(({summary:'Resumen',table:'Tabla',chart:'Gráfica',map:'Mapa',sql:'SQL'}[name])) + '</span>').join('');
+}
+function welcome() {
+  return '<div class="welcome"><div class="spark-logo">✦</div><p class="eyebrow">AI DATA ASSISTANT</p><h2>Una pregunta empieza<br><em>con los datos correctos.</em></h2><p class="welcome-copy">Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.</p><button type="button" class="primary-button" data-open-new-chat>Crear un chat</button></div>';
+}
+async function openChat(chatId) {
+  if (!chatById(chatId)) return;
+  state.chatId = chatId; sessionStorage.setItem('ttd-chat-id',chatId); state.chat = null;
+  setView('chat'); renderSidebar(); renderContext();
+  one('chat-stream').innerHTML = '<div class="loading-state" role="status">Cargando conversación…</div>';
   try {
-    state.connections = await api('/api/connections');
-    await loadDatabases();
-    $('#database-select').value = state.database;
-    await loadTables(true);
-    await profileTables(true);
-    await loadHistory();
-  } catch (error) { toast(error.message, true); }
-  syncContext();
+    const chat = await api('/api/workspace/chats/' + encodeURIComponent(chatId));
+    if (state.chatId !== chatId) return;
+    state.chat = chat; one('chat-stream').innerHTML = '';
+    renderOverview(chat);
+    chat.messages.forEach(item => { appendUser(item.question); renderAnswer(item); });
+    scrollChat();
+  } catch(error) { if (state.chatId === chatId) renderError(error.message); }
 }
-
-async function loadDatabases() {
-  setDbStatus('Conectando…', false);
-  const databases = await api('/api/databases', { method:'POST', body:JSON.stringify(activeConnectionPayload()) });
-  $('#database-select').innerHTML = databases.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('') || '<option value="">Sin esquemas disponibles</option>';
-  if (!databases.includes(state.database)) state.database = databases[0] || '';
-  $('#database-select').value = state.database;
-  setDbStatus(`${databases.length} esquemas disponibles`, true);
+function renderOverview(chat) {
+  const node = document.createElement('article'); node.className = 'message assistant-message overview-message';
+  node.innerHTML = '<div class="assistant-avatar">✦</div><div class="answer-body"><p class="eyebrow">'+escapeHtml((translations[state.uiLanguage]||{})['ANÁLISIS PRELIMINAR']||'ANÁLISIS PRELIMINAR')+'</p><h3>'+escapeHtml((translations[state.uiLanguage]||{})['Ya conozco estas tablas']||'Ya conozco estas tablas')+'</h3><p>' + escapeHtml(chat.overview) + '</p>' + (chat.warning ? '<p class="inline-status error">' + escapeHtml(chat.warning) + '</p>' : '') + '</div></div>';
+  one('chat-stream').append(node);
 }
-
-async function loadTables(preserve = false) {
-  if (!state.database) return;
-  const tables = await api('/api/tables', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database }) });
-  if (!preserve) state.tables = [];
-  state.tables = state.tables.filter(item => tables.includes(item));
-  $('#table-picker').innerHTML = tables.map(name => `<label class="table-check"><input type="checkbox" value="${escapeHtml(name)}" ${state.tables.includes(name) ? 'checked' : ''}><b>${escapeHtml(name)}</b><span>tabla</span></label>`).join('') || '<p class="empty-state">No se encontraron tablas.</p>';
-  $$('#table-picker input').forEach(input => input.addEventListener('change', syncTableSelection));
-  syncContext();
+function appendUser(text) {
+  const node = document.createElement('div'); node.className = 'message user-message';
+  node.innerHTML = '<div class="user-bubble">' + escapeHtml(text) + '</div>'; one('chat-stream').append(node); scrollChat();
 }
-
-function syncTableSelection() {
-  state.tables = $$('#table-picker input:checked').map(input => input.value);
-  state.profiles = [];
-  $('#profile-status').textContent = state.tables.length ? 'La selección ha cambiado; vuelve a analizarla.' : '';
-  syncContext();
-}
-
-async function profileTables(silent = false) {
-  if (!state.tables.length) { if (!silent) toast('Selecciona al menos una tabla.', true); return; }
-  const button = $('#profile-button'); button.disabled = true; button.textContent = 'Analizando…';
-  try {
-    state.profiles = await api('/api/profile', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables }) });
-    const generated = profileContext(state.profiles);
-    if (!state.dataContext || state.dataContext === state.generatedContext) {
-      state.dataContext = generated;
-      $('#model-context').value = generated;
-      sessionStorage.setItem('ttd-data-context', generated);
-    }
-    state.generatedContext = generated;
-    sessionStorage.setItem('ttd-generated-context', generated);
-    const columns = state.profiles.reduce((sum, item) => sum + item.columns.length, 0);
-    $('#profile-status').textContent = `Perfil listo · ${state.profiles.length} tablas · ${columns} columnas`; $('#profile-status').className = 'inline-status success';
-    if (!silent) toast('Perfil de datos actualizado.');
-  } catch (error) { $('#profile-status').textContent = error.message; $('#profile-status').className = 'inline-status error'; if (!silent) toast(error.message, true); }
-  finally { button.disabled = false; button.textContent = 'Analizar selección'; }
-}
-
-function profileContext(profiles) {
-  const heading = `Base de datos/esquema: ${state.database || 'sin seleccionar'}.`;
-  const tables = profiles.map(profile => {
-    const columns = profile.columns.map(column => {
-      const details = [`tipo=${column.type}`, `nulos=${column.nulls}`, `distintos_en_muestra=${column.unique}`];
-      if (column.examples?.length) details.push(`ejemplos=${column.examples.join(' | ')}`);
-      return `${column.name} (${details.join(', ')})`;
-    }).join('; ');
-    return `Tabla ${profile.qualified || profile.table} [muestra: ${profile.sample_rows} filas]: ${columns}`;
-  });
-  return [heading, ...tables, '', 'Preferencias del usuario:'].join('\n');
-}
-
-function syncContext() {
-  const selected = state.connections.find(item => item.name === state.connection);
-  const name = state.connectionSpec?.label || selected?.label || state.connection;
-  const engineNames = { postgresql:'PostgreSQL', cloudera:'Cloudera', trino:'Trino', sqlite:'SQLite' };
-  const engine = engineNames[state.connectionSpec?.engine || selected?.engine] || '—';
-  $('#mini-source').textContent = name; $('#context-connection').textContent = name; $('#context-engine').textContent = `${engine} · Conectado`;
-  $('#source-pill span:nth-child(2)').textContent = name; $('#source-pill small').textContent = `${state.tables.length} tablas`; $('#table-count').textContent = state.tables.length;
-  $('#context-tables').innerHTML = state.tables.map(name => { const profile = state.profiles.find(item => item.table === name); return `<div class="table-item"><span>▦</span><b>${escapeHtml(name)}</b><small>${profile ? profile.columns.length + ' cols' : 'sin perfil'}</small></div>`; }).join('') || '<p class="muted-small">Sin tablas</p>';
-  const totalColumns = state.profiles.reduce((sum, profile) => sum + profile.columns.length, 0);
-  $('#column-count').textContent = totalColumns;
-  $('#context-columns').innerHTML = state.profiles.map((profile, index) => `<details class="schema-table" ${index === 0 ? 'open' : ''}><summary><span>▤</span><b>${escapeHtml(profile.table)}</b><small>${profile.columns.length}</small></summary><div>${profile.columns.map(column => `<div class="schema-column" title="${escapeHtml((column.examples || []).join(' · '))}"><span><b>${escapeHtml(column.name)}</b><small>${escapeHtml(column.type)}</small></span><em>${column.nulls ? column.nulls + ' nulos' : column.unique + ' distintos'}</em></div>`).join('')}</div></details>`).join('') || '<p class="muted-small">Analiza las tablas para ver su esquema.</p>';
-  const moduleNames = { summary:'Resumen', table:'Tabla', map:'Mapa', chart:'Gráfica', sql:'SQL' };
-  $('#active-modules').innerHTML = Object.entries(state.modules).filter(([,on]) => on).map(([key]) => `<span>${moduleNames[key]}</span>`).join('');
-}
-
-function setDbStatus(text, success) { $('#db-status').textContent = text; $('#db-status-dot').className = success ? 'ok' : ''; }
-
-async function loadHistory() {
-  const items = await api('/api/history');
-  $('#history-list').innerHTML = items.length ? items.slice().reverse().map(item => `<button class="history-item" data-history-id="${item.id}">${escapeHtml(item.question)}</button>`).join('') : '<p class="muted-small">Aún no hay preguntas</p>';
-}
-
-async function ask(question) {
-  question = question.trim(); if (!question) return;
-  if (!state.profiles.length) { toast('Analiza primero las tablas seleccionadas.', true); openSettings(); return; }
-  $('#welcome')?.remove(); appendUser(question); $('#question').value = ''; resizeComposer();
-  const typing = appendTyping(); $('#send-button').disabled = true;
-  try {
-    const result = await api('/api/ask', { method:'POST', body:JSON.stringify({ ...activeConnectionPayload(), database:state.database, tables:state.tables, profiles:state.profiles, additional_context:state.dataContext, modules:state.modules, model:state.model, model_language:state.modelLanguage, question }) });
-    typing.remove(); renderAnswer(result); await loadHistory();
-  } catch (error) { typing.remove(); renderError(error.message); }
-  finally { $('#send-button').disabled = false; $('#question').focus(); }
-}
-
-function appendUser(question) {
-  const node = document.createElement('div'); node.className = 'message user-message'; node.innerHTML = `<div class="user-bubble">${escapeHtml(question)}</div>`; $('#chat-stream').append(node); scrollChat();
-}
-
 function appendTyping() {
-  const node = document.createElement('div'); node.className = 'message assistant-message'; node.innerHTML = '<div class="assistant-avatar">✦</div><div class="answer-body"><div class="typing"><i></i><i></i><i></i></div></div>'; $('#chat-stream').append(node); scrollChat(); return node;
-}
-
-function renderError(message) {
-  const node = document.createElement('div'); node.className = 'message assistant-message'; node.innerHTML = `<div class="assistant-avatar">!</div><div class="answer-body"><h3>No pude completar el análisis</h3><p>${escapeHtml(message)}</p></div>`; $('#chat-stream').append(node); scrollChat();
-}
-
-function renderAnswer(result) {
-  const enabledTabs = [];
-  if (result.modules.table) enabledTabs.push(['table','Tabla']);
-  if (result.modules.chart && result.chart !== 'none') enabledTabs.push(['chart','Gráfica']);
-  if (result.modules.map && result.map.enabled) enabledTabs.push(['map','Mapa']);
-  if (result.modules.sql) enabledTabs.push(['sql','SQL']);
   const node = document.createElement('div'); node.className = 'message assistant-message';
-  node.innerHTML = `<div class="assistant-avatar">✦</div><div class="answer-body"><h3>${escapeHtml(result.title)}</h3>${result.modules.summary ? `<p>${escapeHtml(result.summary)}</p>` : ''}<div class="answer-tabs">${enabledTabs.map(([key,label], index) => `<button data-result-tab="${key}" class="${index === 0 ? 'active' : ''}">${label}</button>`).join('')}</div><div class="result-panel">${enabledTabs.length ? panelFor(enabledTabs[0][0], result) : '<div class="sql-panel">No hay módulos activos.</div>'}</div></div>`;
-  $('#chat-stream').append(node);
-  $$('[data-result-tab]', node).forEach(button => button.addEventListener('click', () => { destroyMap(node); $$('[data-result-tab]', node).forEach(item => item.classList.toggle('active', item === button)); $('.result-panel', node).innerHTML = panelFor(button.dataset.resultTab, result); bindPanelActions(node, result); }));
-  bindPanelActions(node, result); scrollChat();
+  node.innerHTML = '<div class="assistant-avatar">✦</div><div class="answer-body"><div class="typing"><i></i><i></i><i></i></div></div>';
+  one('chat-stream').append(node); scrollChat(); return node;
+}
+function renderError(message) {
+  const node = document.createElement('div'); node.className = 'message assistant-message';
+  node.innerHTML = '<div class="assistant-avatar">!</div><div class="answer-body"><h3>No pude completar el análisis</h3><p>' + escapeHtml(message) + '</p></div>';
+  one('chat-stream').append(node); scrollChat();
+}
+function scrollChat() { requestAnimationFrame(() => { one('chat-stream').scrollTop = one('chat-stream').scrollHeight; }); }
+function resizeComposer() { const el=one('question'); el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
+async function ask(question) {
+  question = question.trim(); if (!question || !state.chatId || state.busy) return;
+  const chatId = state.chatId; state.busy = true; renderContext();
+  appendUser(question); one('question').value = ''; resizeComposer();
+  const typing = appendTyping();
+  try {
+    const result = await post('/api/workspace/chats/' + encodeURIComponent(chatId) + '/ask', {
+      question, modules:state.modules, model_language:state.modelLanguage,
+      additional_context:sessionStorage.getItem('ttd-context-' + chatId) || ''
+    });
+    typing.remove();
+    if (state.chatId === chatId) renderAnswer(result);
+    await refreshWorkspace();
+  } catch(error) { typing.remove(); if (state.chatId === chatId) renderError(error.message); }
+  finally { state.busy = false; renderContext(); if (state.chatId === chatId) one('question').focus(); }
 }
 
-function panelFor(type, result) {
-  if (type === 'table') return `<div class="table-scroll"><table><thead><tr><th class="row-number" scope="col">#</th>${result.columns.map(col => `<th scope="col">${escapeHtml(col)}</th>`).join('')}</tr></thead><tbody>${result.rows.map((row,index) => `<tr><th class="row-number" scope="row">${index+1}</th>${result.columns.map(col => `<td>${formatValue(row[col])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  if (type === 'sql') return `<div class="sql-panel"><button class="copy-sql">Copiar</button><pre>${highlightSql(result.sql)}</pre></div>`;
-  if (type === 'map') return renderMap(result);
+function formatValue(value) { return typeof value === 'number' ? escapeHtml(new Intl.NumberFormat(state.uiLanguage,{maximumFractionDigits:2}).format(value)) : escapeHtml(value); }
+function compactNumber(value) { return new Intl.NumberFormat(state.uiLanguage,{notation:'compact',maximumFractionDigits:1}).format(value); }
+function renderAnswer(result) {
+  const tabs = [];
+  if (result.modules.table) tabs.push(['table',t('Tabla')]);
+  if (result.modules.chart && result.chart !== 'none') tabs.push(['chart',t('Gráfica')]);
+  if (result.modules.map && result.map.enabled) tabs.push(['map',t('Mapa')]);
+  if (result.modules.sql) tabs.push(['sql','SQL']);
+  const node=document.createElement('div'); node.className='message assistant-message';
+  node.innerHTML='<div class="assistant-avatar">✦</div><div class="answer-body"><h3>'+escapeHtml(result.title)+'</h3>'+(result.modules.summary ? '<p>'+escapeHtml(result.summary)+'</p>' : '')+'<div class="answer-tabs">'+tabs.map(([key,label],index)=>'<button type="button" data-result-tab="'+key+'" class="'+(index===0?'active':'')+'">'+label+'</button>').join('')+'</div><div class="result-panel">'+(tabs.length?panelFor(tabs[0][0],result):'<div class="sql-panel">No hay módulos activos.</div>')+'</div></div>';
+  one('chat-stream').append(node);
+  $$('[data-result-tab]',node).forEach(button=>button.addEventListener('click',()=>{
+    destroyMap(node); $$('[data-result-tab]',node).forEach(other=>other.classList.toggle('active',other===button));
+    $('.result-panel',node).innerHTML=panelFor(button.dataset.resultTab,result); bindPanel(node,result);
+  }));
+  bindPanel(node,result); scrollChat();
+}
+function panelFor(type,result) {
+  if (type==='table') return '<div class="table-scroll"><table><thead><tr><th class="row-number" scope="col">#</th>'+result.columns.map(col=>'<th scope="col">'+escapeHtml(col)+'</th>').join('')+'</tr></thead><tbody>'+result.rows.map((row,index)=>'<tr><th class="row-number" scope="row">'+(index+1)+'</th>'+result.columns.map(col=>'<td>'+formatValue(row[col])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+  if (type==='sql') return '<div class="sql-panel"><button type="button" class="copy-sql">Copiar</button><pre>'+highlightSql(result.sql)+'</pre></div>';
+  if (type==='map') return renderMap(result);
   return renderChart(result);
 }
-
-function bindPanelActions(node, result) {
-  $('.copy-sql', node)?.addEventListener('click', async event => { await navigator.clipboard.writeText(result.sql); event.currentTarget.textContent = 'Copiado ✓'; });
-  initMap(node, result);
+function bindPanel(node,result) {
+  $('.copy-sql',node)?.addEventListener('click',async event=>{try { await navigator.clipboard.writeText(result.sql); event.currentTarget.textContent='Copiado ✓'; } catch { toast('No se pudo copiar la consulta.',true); }});
+  initMap(node,result);
 }
+function highlightSql(sql) { return escapeHtml(sql).replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|ON|GROUP BY|ORDER BY|LIMIT|AS|SUM|COUNT|AVG|ROUND|DESC|ASC)\b/gi,'<span class="kw">$1</span>'); }
 
-function formatValue(value) { if (typeof value === 'number') return escapeHtml(new Intl.NumberFormat(state.uiLanguage, { maximumFractionDigits:2 }).format(value)); return escapeHtml(value); }
-function numericColumns(result) { return result.columns.filter(col => result.rows.some(row => typeof row[col] === 'number') && !/lat|lon|id/i.test(col)); }
-
-const chartColors = ['var(--chart-1)','var(--chart-2)','var(--chart-3)'];
-function compactNumber(value) { return new Intl.NumberFormat(state.uiLanguage,{notation:'compact',maximumFractionDigits:1}).format(value); }
-function chartLabelColumn(result, metrics) { return result.columns.find(col => !metrics.includes(col) && !/lat|lon|id/i.test(col)) || result.columns[0]; }
-function axisTicks(max, count=4) { return Array.from({length:count+1},(_,index)=>max*index/count); }
-
+const chartColors=['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-6)'];
+function chartData(result) {
+  const columns=result.columns, rows=result.rows.slice(0,20);
+  const numeric=columns.filter(col=>!/^(lat|latitude|latitud|lon|lng|longitude|longitud|.*_id)$/i.test(col) && rows.some(row=>typeof row[col]==='number'));
+  const categorical=columns.filter(col=>!numeric.includes(col) && !/^(lat|latitude|latitud|lon|lng|longitude|longitud|.*_id)$/i.test(col));
+  const xcol=categorical[0] || columns[0];
+  let labels=[],series=[];
+  if (numeric.length===1 && categorical.length>1) {
+    const groups=[...new Set(rows.map(row=>String(row[categorical[1]]??'')))].slice(0,6);
+    labels=[...new Set(rows.map(row=>String(row[xcol]??'')))].slice(0,20);
+    series=groups.map(group=>({name:group,values:labels.map(label=>Number(rows.find(row=>String(row[xcol]??'')===label && String(row[categorical[1]]??'')===group)?.[numeric[0]])||0)}));
+  } else {
+    labels=rows.map(row=>String(row[xcol]??''));
+    series=numeric.slice(0,6).map(name=>({name,values:rows.map(row=>Number(row[name])||0)}));
+  }
+  return {labels,series,xcol};
+}
 function renderChart(result) {
-  const metrics = numericColumns(result).slice(0,3); const label = chartLabelColumn(result,metrics);
-  if (!metrics.length || !result.rows.length) return '<div class="sql-panel">No hay una combinación de categoría y valor numérico para visualizar.</div>';
-  const rows = result.rows.slice(0,14); const metric = metrics[0]; const values = rows.map(row => Number(row[metric]) || 0); const max = Math.max(...values,1);
-  if (result.chart === 'donut') {
-    const colors = ['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-6)']; const total = values.reduce((a,b)=>a+b,0) || 1; let cursor=0;
-    const stops = values.map((value,index)=>{const start=cursor;cursor += value/total*100;return `${colors[index%colors.length]} ${start}% ${cursor}%`;}).join(',');
-    return `<div class="donut-wrap"><div class="donut-stack"><div class="donut" style="background:conic-gradient(${stops})"></div><strong>${compactNumber(total)}</strong><small>${escapeHtml(metric)}</small></div><div class="legend">${rows.map((row,index)=>`<div><i style="background:${colors[index%colors.length]}"></i><span>${escapeHtml(row[label])} · ${formatValue(row[metric])} (${Math.round(values[index]/total*100)}%)</span></div>`).join('')}</div></div>`;
+  const data=chartData(result);
+  if (!data.series.length || !data.labels.length) return '<div class="sql-panel">No hay categorías y medidas numéricas para visualizar.</div>';
+  if (result.chart==='donut' && data.series.length===1) {
+    const values=data.series[0].values,total=values.reduce((a,b)=>a+Math.max(0,b),0)||1;let cursor=0;
+    const stops=values.map((value,i)=>{const start=cursor;cursor+=Math.max(0,value)/total*100;return chartColors[i%chartColors.length]+' '+start+'% '+cursor+'%';}).join(',');
+    return '<div class="donut-wrap"><div class="donut-stack"><div class="donut" style="background:conic-gradient('+stops+')"></div><strong>'+compactNumber(total)+'</strong></div><div class="legend">'+data.labels.map((label,i)=>'<div><i style="background:'+chartColors[i%chartColors.length]+'"></i><span>'+escapeHtml(label)+' · '+formatValue(values[i])+' ('+Math.round(Math.max(0,values[i])/total*100)+'%)</span></div>').join('')+'</div></div>';
   }
-  if (/line/.test(result.chart)) {
-    return renderLineChart(result,rows,label,metrics.slice(0,2));
+  const isLine=/line/.test(result.chart), stacked=result.chart==='stacked_bar' && data.series.every(s=>s.values.every(v=>v>=0));
+  const overallMax=Math.max(...data.series.map(s=>Math.max(...s.values.map(Math.abs),1)));
+  const secondary=data.series.length>1 && !stacked ? data.series.map(s=>overallMax/Math.max(...s.values.map(Math.abs),1)>=8) : data.series.map(()=>false);
+  const primaryValues=data.series.filter((_,i)=>!secondary[i]).flatMap(s=>s.values);
+  const secondaryValues=data.series.filter((_,i)=>secondary[i]).flatMap(s=>s.values);
+  const leftMin=stacked?0:Math.min(0,...primaryValues),leftMax=stacked?Math.max(...data.labels.map((_,i)=>data.series.reduce((sum,s)=>sum+s.values[i],0)),1):Math.max(1,...primaryValues);
+  const rightMin=Math.min(0,...secondaryValues),rightMax=Math.max(1,...secondaryValues);
+  const width=Math.max(680,data.labels.length*58),height=360,left=70,right=secondary.some(Boolean)?74:28,top=50,bottom=85,plotW=width-left-right,plotH=height-top-bottom;
+  const y=(v,axis)=>{const min=axis?rightMin:leftMin,max=axis?rightMax:leftMax;return top+plotH-(v-min)/(max-min)*plotH;};
+  const x=i=>left+plotW*(i+.5)/data.labels.length;
+  const grid=Array.from({length:5},(_,i)=>{const value=leftMin+(leftMax-leftMin)*i/4,yy=y(value,false);return '<g><line class="chart-grid" x1="'+left+'" y1="'+yy+'" x2="'+(left+plotW)+'" y2="'+yy+'"/><text class="chart-axis-label" x="'+(left-9)+'" y="'+(yy+4)+'" text-anchor="end">'+compactNumber(value)+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-label" x="'+(left+plotW+9)+'" y="'+(yy+4)+'">'+compactNumber(rightMin+(rightMax-rightMin)*i/4)+'</text>':'')+'</g>';}).join('');
+  const labels=data.labels.map((label,i)=>'<text class="chart-axis-label" transform="translate('+x(i)+','+(top+plotH+18)+') rotate(-35)" text-anchor="end">'+escapeHtml(label.slice(0,18))+'</text>').join('');
+  let marks='';
+  if(isLine) {
+    marks=data.series.map((s,j)=>{const coords=s.values.map((v,i)=>[x(i),y(v,secondary[j])]);return '<polyline class="chart-series" fill="none" stroke="'+chartColors[j%chartColors.length]+'" points="'+coords.map(p=>p.join(',')).join(' ')+'"/>'+coords.map((p,i)=>'<circle class="chart-point" cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="var(--chart-surface)" stroke="'+chartColors[j%chartColors.length]+'"><title>'+escapeHtml(data.labels[i]+' · '+s.name)+': '+formatValue(s.values[i])+'</title></circle>').join('');}).join('');
+  } else {
+    const groupW=plotW/data.labels.length,barW=Math.max(3,Math.min(36,(groupW-12)/(stacked?1:data.series.length)));
+    marks=data.labels.map((label,i)=>{let accumulated=0;return data.series.map((s,j)=>{const v=s.values[i],base=stacked?accumulated:0;accumulated+=v;const xx=stacked?x(i)-barW/2:x(i)-barW*data.series.length/2+j*barW,topY=y(base+v,secondary[j]),zeroY=y(base,secondary[j]),yy=Math.min(topY,zeroY),hh=Math.max(1,Math.abs(topY-zeroY));return '<rect class="chart-rect" x="'+xx+'" y="'+yy+'" width="'+Math.max(1,barW-2)+'" height="'+hh+'" rx="2" fill="'+chartColors[j%chartColors.length]+'"><title>'+escapeHtml(label+' · '+s.name)+': '+formatValue(v)+'</title></rect>';}).join('');}).join('');
   }
-  return renderBarChart(result,rows,label,metrics);
+  const legend=data.series.map((s,i)=>'<span><i style="background:'+chartColors[i%chartColors.length]+'"></i>'+escapeHtml(s.name)+(secondary[i]?' · eje derecho':'')+'</span>').join('');
+  const svg='<svg class="chart-svg" style="min-width:'+width+'px" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escapeHtml(result.title)+'; eje horizontal '+escapeHtml(data.xcol)+'; '+escapeHtml(data.series.map(s=>s.name).join(', '))+'"><title>'+escapeHtml(result.title)+'</title>'+grid+'<line class="chart-axis" x1="'+left+'" y1="'+top+'" x2="'+left+'" y2="'+(top+plotH)+'"/><line class="chart-axis" x1="'+left+'" y1="'+(top+plotH)+'" x2="'+(left+plotW)+'" y2="'+(top+plotH)+'"/>'+labels+marks+'<text class="chart-axis-title" x="'+left+'" y="22">'+escapeHtml(data.series.filter((_,i)=>!secondary[i]).map(s=>s.name).join(' · '))+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-title" x="'+(left+plotW)+'" y="22" text-anchor="end">'+escapeHtml(data.series.filter((_,i)=>secondary[i]).map(s=>s.name).join(' · '))+'</text>':'')+'<text class="chart-axis-title" x="'+(left+plotW/2)+'" y="'+(height-5)+'" text-anchor="middle">'+escapeHtml(data.xcol)+'</text></svg>';
+  return '<div class="chart-panel"><div class="chart-legend">'+legend+'</div>'+svg+'</div>';
 }
-
-function renderLineChart(result,rows,label,metrics) {
-  const width=760,height=330,left=66,right=metrics.length>1?70:24,top=48,bottom=62,plotW=width-left-right,plotH=height-top-bottom;
-  const maxima=metrics.map(metric=>Math.max(...rows.map(row=>Number(row[metric])||0),1));
-  const x=index=>left+(rows.length===1?plotW/2:index*plotW/(rows.length-1));
-  const y=(value,series)=>top+plotH-(Number(value)||0)/maxima[series]*plotH;
-  const grid=axisTicks(maxima[0]).map(value=>`<g><line class="chart-grid" x1="${left}" y1="${y(value,0)}" x2="${left+plotW}" y2="${y(value,0)}"/><text class="chart-axis-label" x="${left-10}" y="${y(value,0)+4}" text-anchor="end">${compactNumber(value)}</text></g>`).join('');
-  const rightAxis=metrics[1]?axisTicks(maxima[1]).map(value=>`<text class="chart-axis-label" x="${left+plotW+10}" y="${y(value,1)+4}" text-anchor="start">${compactNumber(value)}</text>`).join(''):'';
-  const step=Math.max(1,Math.ceil(rows.length/8));
-  const xLabels=rows.map((row,index)=>index%step===0||index===rows.length-1?`<text class="chart-axis-label" x="${x(index)}" y="${top+plotH+25}" text-anchor="middle">${escapeHtml(row[label])}</text>`:'').join('');
-  const series=metrics.map((metric,seriesIndex)=>{const points=rows.map((row,index)=>`${x(index)},${y(row[metric],seriesIndex)}`).join(' ');return `<polyline class="chart-series" points="${points}" fill="none" stroke="${chartColors[seriesIndex]}"/>${rows.map((row,index)=>`<circle class="chart-point" cx="${x(index)}" cy="${y(row[metric],seriesIndex)}" r="4" fill="var(--chart-surface)" stroke="${chartColors[seriesIndex]}"><title>${escapeHtml(row[label])} · ${escapeHtml(metric)}: ${formatValue(row[metric])}</title></circle>`).join('')}`}).join('');
-  const legend=metrics.map((metric,index)=>`<span><i style="background:${chartColors[index]}"></i>${escapeHtml(metric)}</span>`).join('');
-  return `<div class="chart-panel"><div class="chart-legend">${legend}</div><svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(result.title)}. Eje horizontal: ${escapeHtml(label)}. Series: ${metrics.map(escapeHtml).join(', ')}"><title>${escapeHtml(result.title)}</title>${grid}${rightAxis}<line class="chart-axis" x1="${left}" y1="${top}" x2="${left}" y2="${top+plotH}"/><line class="chart-axis" x1="${left}" y1="${top+plotH}" x2="${left+plotW}" y2="${top+plotH}"/>${xLabels}${series}<text class="chart-axis-title" x="${left}" y="22">${escapeHtml(metrics[0])}</text>${metrics[1]?`<text class="chart-axis-title" x="${left+plotW}" y="22" text-anchor="end">${escapeHtml(metrics[1])}</text>`:''}<text class="chart-axis-title" x="${left+plotW/2}" y="${height-5}" text-anchor="middle">${escapeHtml(label)}</text></svg></div>`;
-}
-
-function renderBarChart(result,rows,label,metrics) {
-  const width=760,height=340,left=66,right=24,top=48,bottom=76,plotW=width-left-right,plotH=height-top-bottom,stacked=result.chart==='stacked_bar';
-  const max=stacked?Math.max(...rows.map(row=>metrics.reduce((sum,metric)=>sum+(Number(row[metric])||0),0)),1):Math.max(...rows.flatMap(row=>metrics.map(metric=>Number(row[metric])||0)),1);
-  const groupW=plotW/Math.max(rows.length,1),barW=Math.max(5,Math.min(34,(groupW-10)/(stacked?1:metrics.length)));
-  const y=value=>top+plotH-(Number(value)||0)/max*plotH;
-  const grid=axisTicks(max).map(value=>`<g><line class="chart-grid" x1="${left}" y1="${y(value)}" x2="${left+plotW}" y2="${y(value)}"/><text class="chart-axis-label" x="${left-10}" y="${y(value)+4}" text-anchor="end">${compactNumber(value)}</text></g>`).join('');
-  const bars=rows.map((row,rowIndex)=>{const center=left+groupW*(rowIndex+.5);let cumulative=0;const marks=metrics.map((metric,seriesIndex)=>{const value=Number(row[metric])||0;const h=value/max*plotH;const x=stacked?center-barW/2:center-(barW*metrics.length)/2+seriesIndex*barW;const yy=stacked?y(cumulative+value):y(value);cumulative+=value;return `<rect class="chart-rect" x="${x}" y="${yy}" width="${Math.max(1,barW-2)}" height="${Math.max(1,h)}" rx="2" fill="${chartColors[seriesIndex]}"><title>${escapeHtml(row[label])} · ${escapeHtml(metric)}: ${formatValue(value)}</title></rect>`}).join('');return `${marks}<text class="chart-axis-label" transform="translate(${center},${top+plotH+16}) rotate(-35)" text-anchor="end">${escapeHtml(row[label])}</text>`}).join('');
-  const legend=metrics.map((metric,index)=>`<span><i style="background:${chartColors[index]}"></i>${escapeHtml(metric)}</span>`).join('');
-  return `<div class="chart-panel"><div class="chart-legend">${legend}</div><svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(result.title)}. Eje horizontal: ${escapeHtml(label)}. Valores: ${metrics.map(escapeHtml).join(', ')}"><title>${escapeHtml(result.title)}</title>${grid}<line class="chart-axis" x1="${left}" y1="${top}" x2="${left}" y2="${top+plotH}"/><line class="chart-axis" x1="${left}" y1="${top+plotH}" x2="${left+plotW}" y2="${top+plotH}"/>${bars}<text class="chart-axis-title" x="${left}" y="22">${escapeHtml(metrics.join(' · '))}</text><text class="chart-axis-title" x="${left+plotW/2}" y="${height-5}" text-anchor="middle">${escapeHtml(label)}</text></svg></div>`;
-}
-
 let mapSequence=0;
 function renderMap(result) {
-  const lat = result.map.latitude, lon = result.map.longitude; const rows = result.rows.filter(row => Number.isFinite(Number(row[lat])) && Number.isFinite(Number(row[lon]))).slice(0,30);
-  if(!rows.length)return '<div class="map-unavailable">La consulta no devolvió coordenadas válidas.</div>';
-  const id=`result-map-${++mapSequence}`;
-  return `<div class="map-shell"><div id="${id}" class="leaflet-map" role="region" aria-label="Mapa interactivo con ${rows.length} ubicaciones"></div><p class="map-caption">${rows.length} ubicaciones · usa los controles para ampliar y desplazarte</p></div>`;
+  const lat=result.map.latitude,lon=result.map.longitude;
+  const rows=result.rows.filter(row=>Number.isFinite(Number(row[lat])) && Number.isFinite(Number(row[lon]))).slice(0,100);
+  if(!rows.length)return '<div class="map-unavailable">No hay coordenadas válidas.</div>';
+  return '<div class="map-shell"><div id="result-map-'+(++mapSequence)+'" class="leaflet-map" role="region" aria-label="Mapa interactivo con '+rows.length+' ubicaciones"></div><p class="map-caption">'+rows.length+' ubicaciones · usa los controles para ampliar y desplazarte</p></div>';
 }
-
-function destroyMap(node){const container=$('.leaflet-map',node);if(container?._mapInstance){container._mapInstance.remove();container._mapInstance=null}}
-function initMap(node,result){
+function destroyMap(node) { const container=$('.leaflet-map',node); if(container?._mapInstance){container._mapInstance.remove();container._mapInstance=null;} }
+function initMap(node,result) {
   const container=$('.leaflet-map',node);if(!container||container._mapInstance)return;
-  if(!window.L){container.innerHTML='<div class="map-unavailable">No se pudo cargar Leaflet. Comprueba el acceso a unpkg.com.</div>';return}
-  const lat=result.map.latitude,lon=result.map.longitude,rows=result.rows.filter(row=>Number.isFinite(Number(row[lat]))&&Number.isFinite(Number(row[lon]))).slice(0,30);
+  if(!window.L){container.innerHTML='<div class="map-unavailable">No se pudo cargar Leaflet.</div>';return;}
+  const lat=result.map.latitude,lon=result.map.longitude,rows=result.rows.filter(row=>Number.isFinite(Number(row[lat]))&&Number.isFinite(Number(row[lon]))).slice(0,100);
   const label=result.columns.find(col=>![lat,lon].includes(col))||lat;
-  const map=L.map(container,{scrollWheelZoom:false,zoomControl:true});container._mapInstance=map;
+  const map=L.map(container,{scrollWheelZoom:false});container._mapInstance=map;
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
   const bounds=[];
-  rows.forEach(row=>{const point=[Number(row[lat]),Number(row[lon])];bounds.push(point);const details=result.columns.filter(col=>![lat,lon].includes(col)).slice(0,5).map(col=>`<div><b>${escapeHtml(col)}</b><span>${formatValue(row[col])}</span></div>`).join('');L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#f36a2f',fillOpacity:.9}).addTo(map).bindPopup(`<section class="map-popup"><strong>${escapeHtml(row[label])}</strong>${details}</section>`)});
+  rows.forEach(row=>{const point=[Number(row[lat]),Number(row[lon])];bounds.push(point);const detail=result.columns.filter(col=>![lat,lon].includes(col)).slice(0,5).map(col=>'<div><b>'+escapeHtml(col)+'</b><span>'+formatValue(row[col])+'</span></div>').join('');L.circleMarker(point,{radius:7,color:'#fff',weight:2,fillColor:'#f36a2f',fillOpacity:.9}).addTo(map).bindPopup('<section class="map-popup"><strong>'+escapeHtml(row[label])+'</strong>'+detail+'</section>');});
   if(bounds.length===1)map.setView(bounds[0],11);else map.fitBounds(bounds,{padding:[32,32],maxZoom:11});
   requestAnimationFrame(()=>map.invalidateSize());
 }
 
-function highlightSql(sql) { return escapeHtml(sql).replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|ON|GROUP BY|ORDER BY|LIMIT|AS|SUM|COUNT|AVG|ROUND|DESC|ASC)\b/gi, '<span class="kw">$1</span>'); }
-function scrollChat() { requestAnimationFrame(() => { $('#chat-stream').scrollTop = $('#chat-stream').scrollHeight; }); }
-function resizeComposer() { const q=$('#question'); q.style.height='auto'; q.style.height=`${Math.min(q.scrollHeight,120)}px`; }
-
-function openSettings() { $('#settings-dialog').showModal(); showStep(state.step); }
-function showStep(index) {
-  state.step = Math.max(0,Math.min(2,index));
-  $$('.step-link').forEach((node,i)=>node.classList.toggle('active',i===state.step)); $$('.settings-step').forEach((node,i)=>node.classList.toggle('active',i===state.step));
-  const titles=[['PASO 1 DE 3','Conecta una fuente de datos'],['PASO 2 DE 3','Configura el modelo LLM'],['PASO 3 DE 3','Diseña tus respuestas']]; $('#step-kicker').textContent=titles[state.step][0]; $('#step-title').textContent=titles[state.step][1];
-  $('#previous-step').hidden=state.step===0; $('#next-step').hidden=state.step===2; $('#save-settings').hidden=state.step!==2;
-}
-
-function bindEvents() {
-  $$('[data-open-settings]').forEach(button=>button.addEventListener('click',openSettings)); $$('.step-link').forEach((button,index)=>button.addEventListener('click',()=>showStep(index)));
-  $('#next-step').addEventListener('click',()=>showStep(state.step+1)); $('#previous-step').addEventListener('click',()=>showStep(state.step-1));
-  $$('input[name="connection-mode"]').forEach(input=>input.addEventListener('change',()=>showConnector(input.value)));
-  $('#connect-data-source').addEventListener('click',connectDataSource);
-  $('#database-select').addEventListener('change',async event=>{state.database=event.target.value;state.tables=[];state.profiles=[];try{await loadTables();}catch(error){toast(error.message,true)}});
-  $('#toggle-all').addEventListener('click',()=>{const inputs=$$('#table-picker input');const select=!inputs.every(input=>input.checked);inputs.forEach(input=>input.checked=select);syncTableSelection()}); $('#profile-button').addEventListener('click',()=>profileTables());
-  $('#auth-type').addEventListener('change',event=>{$('#token-fields').hidden=event.target.value==='apikey';$('#apikey-fields').hidden=event.target.value!=='apikey'});
-  $('#test-model').addEventListener('click',async()=>{syncModel();const status=$('#model-status');status.textContent='Comprobando…';try{const result=await api('/api/test-model',{method:'POST',body:JSON.stringify(state.model)});state.model.model=result.model;$('#model-name').value=result.model;$('#model-endpoint').value=result.endpoint;status.textContent=`Conectado · ${result.model} · ${result.latency_ms} ms`;status.className='inline-status success'}catch(error){status.textContent=error.message;status.className='inline-status error'}});
-  $$('#module-picker input').forEach(input=>input.addEventListener('change',()=>{state.modules[input.dataset.module]=input.checked;syncContext()}));
-  $('#ui-language').value=state.uiLanguage; $('#ui-language').addEventListener('change',event=>{state.uiLanguage=event.target.value;applyLanguage()}); $('#model-language').addEventListener('change',event=>state.modelLanguage=event.target.value);
-  $('#ui-theme').value=state.uiTheme; $('#ui-theme').addEventListener('change',event=>{state.uiTheme=event.target.value;applyTheme()});
-  $('#model-context').addEventListener('input',event=>{state.dataContext=event.target.value;sessionStorage.setItem('ttd-data-context',state.dataContext)});
-  $('#save-settings').addEventListener('click',event=>{event.preventDefault();syncModel();state.dataContext=$('#model-context').value;sessionStorage.setItem('ttd-data-context',state.dataContext);syncContext();$('#settings-dialog').close();toast('Configuración guardada para esta sesión.')});
-  $('#ask-form').addEventListener('submit',event=>{event.preventDefault();ask($('#question').value)}); $('#question').addEventListener('input',resizeComposer); $('#question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('#ask-form').requestSubmit()}});
-  $$('.suggestion').forEach(button=>button.addEventListener('click',()=>ask(button.dataset.question)));
-  $('#new-chat').addEventListener('click',newChat); $('#clear-history').addEventListener('click',newChat);
-  $('#mic-button').addEventListener('click',toggleSpeech);
-}
-
-function syncModel(){state.model={endpoint:$('#model-endpoint').value.trim(),model:$('#model-name').value.trim(),auth_type:$('#auth-type').value,token:$('#model-token').value,api_key_id:$('#api-key-id').value,api_key_value:$('#api-key-value').value}}
-
-function showConnector(mode){
-  $$('.connector-fields').forEach(panel=>panel.hidden=panel.id!==`${mode}-fields`);
-  $$('.connection-route span').forEach((step,index)=>step.classList.toggle('active',index<2));
-}
-
-function connectionSpecFromForm(){
-  const mode=$('input[name="connection-mode"]:checked').value;
-  if(mode==='postgresql'){
-    const url=$('#postgres-url').value.trim(),database=$('#postgres-database').value.trim(),username=$('#postgres-user').value.trim();
-    if(!/^(?:jdbc:)?postgres(?:ql)?:\/\//i.test(url))throw new Error('La URL debe comenzar por postgresql:// o jdbc:postgresql://.');
-    if(!database)throw new Error('Indica la base de datos inicial de PostgreSQL.');
-    if(!username)throw new Error('Indica el usuario de PostgreSQL.');
-    return {engine:'postgresql',label:'PostgreSQL',url,database,username,password:$('#postgres-password').value};
+function connectionSpec() {
+  const engine=value('connection-engine');
+  if (engine==='cloudera') {
+    const name=value('cloudera-name'),username=value('cloudera-user'),workload_password=one('cloudera-password').value;
+    if(!name||!username||!workload_password)throw new Error('Indica el nombre registrado, usuario y Workload Password.');
+    return {engine,name,username,workload_password,dialect:value('cloudera-dialect')};
   }
-  if(mode==='cloudera'){
-    const name=$('#cloudera-connection-name').value.trim(),username=$('#cloudera-user').value.trim(),workload_password=$('#cloudera-workload-password').value;
-    if(!name)throw new Error('Indica el nombre de la conexión registrada en Cloudera.');
-    if(!username)throw new Error('Indica el usuario de Cloudera.');
-    if(!workload_password)throw new Error('Indica la Workload Password de Cloudera.');
-    return {engine:'cloudera',label:name,name,cml_registered:true,username,workload_password};
+  if(engine==='postgresql') {
+    const url=value('postgres-url'),database=value('postgres-database'),username=value('postgres-user');
+    if(!url||!database||!username)throw new Error('Completa URL, base inicial y usuario de PostgreSQL.');
+    return {engine,url,database,username,password:one('postgres-password').value};
   }
-  const jdbc_url=$('#trino-url').value.trim();
-  if(!jdbc_url.startsWith('jdbc:trino://'))throw new Error('La URL debe comenzar por jdbc:trino://.');
-  return {engine:'trino',label:'Trino',jdbc_url,username:$('#trino-user').value.trim(),password:$('#trino-password').value};
+  const jdbc_url=value('trino-url');
+  if(!jdbc_url)throw new Error('Indica la JDBC URL de Trino.');
+  return {engine,jdbc_url,username:value('trino-user'),password:one('trino-password').value};
 }
-
-async function connectDataSource(){
-  const button=$('#connect-data-source'),status=$('#connection-status');
-  const previous={connectionSpec:state.connectionSpec,database:state.database,tables:[...state.tables],profiles:[...state.profiles]};
-  try{
-    const spec=connectionSpecFromForm();button.disabled=true;button.textContent='Conectando…';status.textContent='Comprobando acceso y descubriendo bases de datos…';status.className='inline-status';
-    state.connectionSpec=spec;state.database=spec.database||'';state.tables=[];state.profiles=[];
-    await loadDatabases();await loadTables();syncContext();
-    $$('.connection-route span').forEach(step=>step.classList.add('active'));
-    status.textContent='Conexión lista. Elige una base de datos y sus tablas.';status.className='inline-status success';toast(`${spec.label}: conexión disponible.`);
-  }catch(error){state.connectionSpec=previous.connectionSpec;state.database=previous.database;state.tables=previous.tables;state.profiles=previous.profiles;syncContext();status.textContent=error.message;status.className='inline-status error';setDbStatus('La conexión anterior sigue activa',true);toast(error.message,true)}
-  finally{button.disabled=false;button.textContent='Conectar y descubrir bases de datos'}
+function resetConnectionDiscovery() {
+  state.connectionTicket='';state.pendingConnection++;
+  state.pendingTables++;
+  one('connection-discovery').hidden=true;one('connection-database').innerHTML='';
+  one('connection-tables').innerHTML='';status('#connection-status','');
 }
-async function newChat(){await api('/api/history',{method:'DELETE'});location.reload()}
-
+async function discoverConnection() {
+  const sequence=++state.pendingConnection,button=one('discover-connection');
+  resetConnectionDiscovery();state.pendingConnection=sequence;
+  try {
+    const spec=connectionSpec();
+    button.disabled=true;status('#connection-status','Comprobando acceso…');
+    const result=await post('/api/workspace/connections/discover',{spec});
+    if(sequence!==state.pendingConnection)return;
+    state.connectionTicket=result.ticket;
+    one('connection-database').innerHTML=result.databases.map(name=>'<option value="'+escapeHtml(name)+'">'+escapeHtml(name)+'</option>').join('');
+    one('connection-discovery').hidden=false;
+    await loadConnectionTables(sequence);
+    if(sequence===state.pendingConnection)status('#connection-status','Conexión comprobada. Selecciona las tablas.');
+  } catch(error) { if(sequence===state.pendingConnection)status('#connection-status',error.message,true); }
+  finally {button.disabled=false;}
+}
+async function loadConnectionTables(sequence=state.pendingConnection) {
+  if(!state.connectionTicket)return;
+  const tableSequence=++state.pendingTables;
+  one('connection-tables').innerHTML='<p class="empty-state">Descubriendo tablas…</p>';
+  try {
+    const tables=await post('/api/workspace/connections/tables',{ticket:state.connectionTicket,database:value('connection-database')});
+    if(sequence!==state.pendingConnection||tableSequence!==state.pendingTables)return;
+    one('connection-tables').innerHTML=tables.map(name=>'<label class="table-check"><input type="checkbox" value="'+escapeHtml(name)+'"><b>'+escapeHtml(name)+'</b></label>').join('')||'<p class="empty-state">No se encontraron tablas.</p>';
+  } catch(error) { if(sequence===state.pendingConnection&&tableSequence===state.pendingTables)status('#connection-status',error.message,true); }
+}
+async function saveConnection(event) {
+  event.preventDefault();
+  const tables=$$('#connection-tables input:checked').map(input=>input.value),button=one('save-connection');
+  if(!state.connectionTicket){status('#connection-status','Prueba la conexión antes de guardarla.',true);return;}
+  if(!value('connection-label')){status('#connection-status','Ponle un nombre para reconocerla.',true);one('connection-label').focus();return;}
+  if(!tables.length||tables.length>12){status('#connection-status','Selecciona entre 1 y 12 tablas.',true);return;}
+  button.disabled=true;status('#connection-status','Analizando tablas y columnas…');
+  try {
+    const saved=await post('/api/workspace/connections',{ticket:state.connectionTicket,label:value('connection-label'),database:value('connection-database'),tables});
+    one('connection-form').reset();one('connection-engine').value='cloudera';
+    $$('[data-engine]').forEach(panel=>panel.hidden=panel.dataset.engine!=='cloudera');
+    resetConnectionDiscovery();await refreshWorkspace();toast(saved.label+' guardada con su perfil.');
+    one('chat-connection').value=saved.id;renderChatSelectors();
+  } catch(error) {status('#connection-status',error.message,true);}
+  finally {button.disabled=false;}
+}
+function modelConfig() {
+  const auth_type=value('auth-type');
+  const config={endpoint:value('model-endpoint'),model:value('model-name'),auth_type,
+    token:one('model-token').value,api_key_id:value('api-key-id'),api_key_value:one('api-key-value').value};
+  if(!config.endpoint)throw new Error('Indica el endpoint del modelo.');
+  if(auth_type==='apikey'&&(!config.api_key_id||!config.api_key_value))throw new Error('Indica API Key ID y Value.');
+  if(auth_type!=='apikey'&&!config.token)throw new Error('Indica el token de acceso.');
+  return config;
+}
+function invalidateModelTest() {
+  state.pendingModel++;state.modelTicket='';one('save-model').disabled=true;status('#model-status','');
+}
+async function testModel() {
+  const button=one('test-model');invalidateModelTest();
+  const sequence=state.pendingModel;
+  try {
+    const config=modelConfig();button.disabled=true;status('#model-status','Probando endpoint y credenciales…');
+    const result=await post('/api/workspace/models/test',config);
+    if(sequence!==state.pendingModel)return;
+    state.modelTicket=result.ticket;one('model-name').value=result.model;
+    one('model-endpoint').value=result.endpoint;
+    one('save-model').disabled=false;
+    status('#model-status','Conectado · '+result.model+' · '+result.latency_ms+' ms');
+  } catch(error) {if(sequence===state.pendingModel)status('#model-status',error.message,true);}
+  finally {button.disabled=false;}
+}
+async function saveModel(event) {
+  event.preventDefault();
+  if(!state.modelTicket){status('#model-status','Prueba el modelo antes de guardarlo.',true);return;}
+  if(!value('model-label')){status('#model-status','Ponle un nombre para reconocerlo.',true);one('model-label').focus();return;}
+  const button=one('save-model');button.disabled=true;
+  try {
+    const saved=await post('/api/workspace/models',{ticket:state.modelTicket,label:value('model-label')});
+    one('model-form').reset();invalidateModelTest();await refreshWorkspace();
+    toast(saved.label+' guardado y listo para usar.');
+    one('chat-model').value=saved.id;renderChatSelectors();
+  } catch(error) {status('#model-status',error.message,true);button.disabled=false;}
+}
+function openNewChat() {
+  renderChatSelectors();one('chat-create-status').textContent='';
+  one('new-chat-dialog').showModal();one('chat-connection').focus();
+}
+async function createChat(event) {
+  event.preventDefault();
+  const connection_id=value('chat-connection'),model_id=value('chat-model'),button=one('create-chat');
+  if(model_id==='demo'&&connection_id!=='demo'){status('#chat-create-status','Elige un modelo probado para esta conexión.',true);return;}
+  button.disabled=true;status('#chat-create-status','Analizando el perfil de datos con el modelo…');
+  try {
+    const chat=await post('/api/workspace/chats',{connection_id,model_id,model_language:state.modelLanguage});
+    one('new-chat-dialog').close();await refreshWorkspace();await openChat(chat.id);
+    toast('Chat listo. Ya puedes preguntar.');
+  } catch(error) {status('#chat-create-status',error.message,true);}
+  finally {button.disabled=false;}
+}
+async function deleteItem(kind,id) {
+  if(!window.confirm('¿Eliminar este '+({chat:'chat',connection:'conexión',model:'modelo'}[kind]||'elemento')+'?'))return;
+  const path=kind==='chat'?'/api/workspace/chats/':'/api/workspace/'+kind+'s/';
+  try {
+    await api(path+encodeURIComponent(id),{method:'DELETE'});
+    if(kind==='chat'&&state.chatId===id){state.chatId='';state.chat=null;sessionStorage.removeItem('ttd-chat-id');one('chat-stream').innerHTML=welcome();}
+    translateStatic();
+    await refreshWorkspace();toast('Elemento eliminado.');
+  } catch(error) {toast(error.message,true);}
+}
+function savePreferences(event) {
+  event.preventDefault();
+  state.modules=Object.fromEntries($$('[data-module]').map(el=>[el.dataset.module,el.checked]));
+  state.uiTheme=value('ui-theme');state.uiLanguage=value('ui-language');state.modelLanguage=value('model-language');
+  localStorage.setItem('ttd-theme',state.uiTheme);localStorage.setItem('ttd-language',state.uiLanguage);
+  sessionStorage.setItem('ttd-model-language',state.modelLanguage);
+  document.documentElement.dataset.theme=state.uiTheme;document.documentElement.lang=state.uiLanguage;
+  document.querySelector('meta[name="theme-color"]').content=state.uiTheme==='light'?'#f3f5f8':'#07111f';
+  translateStatic();setView(state.view);renderSidebar();
+  one('preferences-dialog').close();renderContext();toast('Preferencias guardadas.');
+}
 let recognition;
-function toggleSpeech(){
-  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SpeechRecognition){toast('El reconocimiento de voz no está disponible en este navegador.',true);return}
-  if(recognition){recognition.stop();return} recognition=new SpeechRecognition();recognition.lang={es:'es-ES',en:'en-US',it:'it-IT',de:'de-DE',fr:'fr-FR'}[state.uiLanguage];recognition.interimResults=true;
-  recognition.onstart=()=>{$('#mic-button').classList.add('listening');$('#mic-status').textContent='Escuchando…'}; recognition.onresult=event=>{$('#question').value=[...event.results].map(result=>result[0].transcript).join('');resizeComposer()}; recognition.onend=()=>{$('#mic-button').classList.remove('listening');$('#mic-status').textContent='';recognition=null}; recognition.onerror=event=>toast(`Micrófono: ${event.error}`,true); recognition.start();
+function toggleSpeech() {
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SpeechRecognition){toast('El reconocimiento de voz no está disponible en este navegador.',true);return;}
+  if(recognition){recognition.stop();return;}
+  recognition=new SpeechRecognition();recognition.lang={es:'es-ES',en:'en-US',it:'it-IT',de:'de-DE',fr:'fr-FR'}[state.uiLanguage];
+  recognition.interimResults=true;
+  recognition.onstart=()=>{one('mic-button').classList.add('listening');one('mic-status').textContent='Escuchando…';};
+  recognition.onresult=event=>{one('question').value=[...event.results].map(result=>result[0].transcript).join('');resizeComposer();};
+  recognition.onend=()=>{one('mic-button').classList.remove('listening');one('mic-status').textContent='';recognition=null;};
+  recognition.onerror=event=>toast('Micrófono: '+event.error,true);
+  recognition.start();
 }
-
-bindEvents(); initialize();
+function bindEvents() {
+  $$('[data-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
+  one('new-chat').addEventListener('click',openNewChat);
+  one('new-connection').addEventListener('click',()=>{setView('connections');one('connection-label').focus();});
+  one('new-model').addEventListener('click',()=>{setView('models');one('model-label').focus();});
+  one('open-preferences').addEventListener('click',()=>one('preferences-dialog').showModal());
+  one('context-toggle').addEventListener('click',()=>{const open=one('context-panel').classList.toggle('open');one('context-toggle').setAttribute('aria-expanded',String(open));if(open)one('context-close').focus();});
+  one('context-close').addEventListener('click',()=>{one('context-panel').classList.remove('open');one('context-toggle').setAttribute('aria-expanded','false');one('context-toggle').focus();});
+  $$('[data-close-dialog]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()));
+  document.addEventListener('click',event=>{
+    const newChat=event.target.closest('[data-open-new-chat]');if(newChat){openNewChat();return;}
+    const chat=event.target.closest('[data-open-chat]');if(chat){openChat(chat.dataset.openChat);return;}
+    const connection=event.target.closest('[data-open-connection]');if(connection){setView('connections');return;}
+    const model=event.target.closest('[data-open-model]');if(model){setView('models');return;}
+    for(const kind of ['chat','connection','model']){const target=event.target.closest('[data-delete-'+kind+']');if(target){deleteItem(kind,target.dataset['delete'+kind[0].toUpperCase()+kind.slice(1)]);return;}}
+  });
+  one('connection-engine').addEventListener('change',event=>{$$('[data-engine]').forEach(panel=>panel.hidden=panel.dataset.engine!==event.target.value);resetConnectionDiscovery();});
+  one('cloudera-dialect').addEventListener('change',resetConnectionDiscovery);
+  $$('#connection-form input').forEach(input=>input.addEventListener('input',()=>{if(input.id!=='connection-label'&&state.connectionTicket)resetConnectionDiscovery();}));
+  one('discover-connection').addEventListener('click',discoverConnection);
+  one('connection-database').addEventListener('change',()=>loadConnectionTables());
+  one('select-all-tables').addEventListener('click',()=>{const inputs=$$('#connection-tables input');const checked=!inputs.every(input=>input.checked);inputs.slice(0,12).forEach(input=>input.checked=checked);});
+  one('connection-form').addEventListener('submit',saveConnection);
+  one('auth-type').addEventListener('change',event=>{one('token-fields').hidden=event.target.value==='apikey';one('apikey-fields').hidden=event.target.value!=='apikey';invalidateModelTest();});
+  $$('#model-form input').forEach(input=>input.addEventListener('input',event=>{if(event.target.id!=='model-label')invalidateModelTest();}));
+  one('test-model').addEventListener('click',testModel);one('model-form').addEventListener('submit',saveModel);
+  one('chat-connection').addEventListener('change',renderChatSelectors);one('chat-model').addEventListener('change',renderChatSelectors);
+  one('new-chat-form').addEventListener('submit',createChat);
+  one('preferences-form').addEventListener('submit',savePreferences);
+  one('model-context').addEventListener('input',event=>{if(state.chatId)sessionStorage.setItem('ttd-context-'+state.chatId,event.target.value);});
+  one('ask-form').addEventListener('submit',event=>{event.preventDefault();ask(value('question'));});
+  one('question').addEventListener('input',resizeComposer);
+  one('question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();one('ask-form').requestSubmit();}});
+  one('mic-button').addEventListener('click',toggleSpeech);
+}
+async function initialize() {
+  bindEvents();
+  one('ui-theme').value=state.uiTheme;one('ui-language').value=state.uiLanguage;one('model-language').value=state.modelLanguage;
+  document.documentElement.lang=state.uiLanguage;
+  one('chat-stream').innerHTML=welcome();
+  translateStatic();setView('chat');
+  try {await refreshWorkspace();if(chatById(state.chatId))await openChat(state.chatId);}
+  catch(error){renderError(error.message);toast(error.message,true);}
+  renderContext();
+}
+initialize();

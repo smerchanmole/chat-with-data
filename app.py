@@ -32,6 +32,7 @@ install_missing_dependencies()
 import json
 import os
 import re
+import secrets
 import time
 import uuid
 from pathlib import Path
@@ -42,6 +43,7 @@ from werkzeug.serving import make_server
 
 from data_connector import DataCatalog
 from llm_client import LLMClient
+from workspace_store import WorkspaceStore
 
 
 def resolve_base_dir(file_name=None, working_directory=None):
@@ -53,10 +55,11 @@ def resolve_base_dir(file_name=None, working_directory=None):
 
 BASE_DIR = resolve_base_dir(globals().get("__file__"))
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "talk-to-data-dev-change-me")
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
 app.config.update(JSON_SORT_KEYS=False, MAX_CONTENT_LENGTH=1_000_000)
 catalog = DataCatalog(BASE_DIR / "runtime")
 llm = LLMClient()
+workspaces = WorkspaceStore(catalog, llm)
 memory: dict[str, list[dict]] = {}
 
 
@@ -93,6 +96,7 @@ def selected_connection(payload):
             "name": name,
             "label": str(direct.get("label") or name), "engine": "cloudera",
             "cml_registered": True,
+            "dialect": "hive" if direct.get("dialect") == "hive" else "impala",
             "username": username, "workload_password": workload_password,
         }
     name = payload.get("connection")
@@ -113,7 +117,22 @@ def handle_error(exc):
     if isinstance(exc, HTTPException):
         return jsonify({"ok": False, "error": exc.description}), exc.code
     status = 400 if isinstance(exc, (ValueError, RuntimeError)) else 500
-    return jsonify({"ok": False, "error": str(exc)}), status
+    message = str(exc) if status == 400 else "Error interno al procesar la petición. Inténtalo de nuevo."
+    payload = request.get_json(silent=True) if request.is_json else None
+    if isinstance(payload, dict):
+        def secrets_in(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key.lower() in {"password", "workload_password", "token", "api_key_value"} and isinstance(item, str) and len(item) > 2:
+                        yield item
+                    else:
+                        yield from secrets_in(item)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from secrets_in(item)
+        for secret in secrets_in(payload):
+            message = message.replace(secret, "[oculto]")
+    return jsonify({"ok": False, "error": message}), status
 
 
 @app.get("/")
@@ -174,6 +193,121 @@ def test_model():
     })
 
 
+@app.get("/api/workspace")
+def workspace_listing():
+    return ok(workspaces.listing(session["conversation_id"]))
+
+
+@app.post("/api/workspace/connections/discover")
+def workspace_discover_connection():
+    payload = request.get_json(force=True)
+    spec = selected_connection({"connection_spec": payload.get("spec", {})})
+    return ok(workspaces.discover_connection(session["conversation_id"], spec))
+
+
+@app.post("/api/workspace/connections/tables")
+def workspace_discover_tables():
+    payload = request.get_json(force=True)
+    return ok(workspaces.discover_tables(session["conversation_id"], payload.get("ticket", ""), payload.get("database", "")))
+
+
+@app.post("/api/workspace/connections")
+def workspace_save_connection():
+    payload = request.get_json(force=True)
+    return ok(workspaces.save_connection(session["conversation_id"], payload.get("ticket", ""),
+                                         payload.get("label", ""), payload.get("database", ""), payload.get("tables", [])))
+
+
+@app.delete("/api/workspace/connections/<item_id>")
+def workspace_delete_connection(item_id):
+    workspaces.delete(session["conversation_id"], "connections", item_id)
+    return ok()
+
+
+@app.post("/api/workspace/models/test")
+def workspace_test_model():
+    return ok(workspaces.test_model(session["conversation_id"], request.get_json(force=True)))
+
+
+@app.post("/api/workspace/models")
+def workspace_save_model():
+    payload = request.get_json(force=True)
+    return ok(workspaces.save_model(session["conversation_id"], payload.get("ticket", ""), payload.get("label", "")))
+
+
+@app.delete("/api/workspace/models/<item_id>")
+def workspace_delete_model(item_id):
+    workspaces.delete(session["conversation_id"], "models", item_id)
+    return ok()
+
+
+@app.post("/api/workspace/chats")
+def workspace_create_chat():
+    payload = request.get_json(force=True)
+    return ok(workspaces.create_chat(session["conversation_id"], payload.get("connection_id", ""), payload.get("model_id", ""), payload.get("model_language", "es")))
+
+
+@app.get("/api/workspace/chats/<chat_id>")
+def workspace_get_chat(chat_id):
+    return ok(workspaces.chat(session["conversation_id"], chat_id))
+
+
+@app.delete("/api/workspace/chats/<chat_id>")
+def workspace_delete_chat(chat_id):
+    workspaces.delete(session["conversation_id"], "chats", chat_id)
+    return ok()
+
+
+@app.post("/api/workspace/chats/<chat_id>/ask")
+def workspace_ask(chat_id):
+    payload = request.get_json(force=True)
+    question = str(payload.get("question", "")).strip()
+    if not question or len(question) > 2000:
+        raise ValueError("Escribe una pregunta de hasta 2000 caracteres.")
+    chat, connection, model = workspaces.binding(session["conversation_id"], chat_id)
+    spec, profiles = connection["spec"], connection["profiles"]
+    context = chat["messages"][-6:]
+    if model.get("built_in"):
+        plan = demo_plan(question)
+        demo_titles = {
+            "en": {"Evolución mensual": "Monthly trend", "Ingresos por tienda": "Revenue by store", "Rendimiento por categoría": "Performance by category", "Ingresos mensuales por categoría": "Monthly revenue by category"},
+            "it": {"Evolución mensual": "Andamento mensile", "Ingresos por tienda": "Ricavi per negozio", "Rendimiento por categoría": "Risultati per categoria", "Ingresos mensuales por categoría": "Ricavi mensili per categoria"},
+            "de": {"Evolución mensual": "Monatliche Entwicklung", "Ingresos por tienda": "Umsatz nach Filiale", "Rendimiento por categoría": "Leistung nach Kategorie", "Ingresos mensuales por categoría": "Monatsumsatz nach Kategorie"},
+            "fr": {"Evolución mensual": "Évolution mensuelle", "Ingresos por tienda": "Revenus par magasin", "Rendimiento por categoría": "Performance par catégorie", "Ingresos mensuales por categoría": "Revenus mensuels par catégorie"},
+        }
+        plan["title"] = demo_titles.get(payload.get("model_language"), {}).get(plan["title"], plan["title"])
+    else:
+        dialect = {"postgresql": "PostgreSQL", "trino": "Trino SQL", "cloudera": "HiveQL" if spec.get("dialect") == "hive" else "Impala SQL",
+                   "sqlite": "SQLite"}.get(spec["engine"], spec["engine"])
+        system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
+Use only read-only {dialect}. Use only the supplied tables and columns. Always include LIMIT 500 or less.
+chart must be one of auto, bar, stacked_bar, line, multi_line, donut, none.
+Use secondary axes for numeric measures with materially different scales. Use stacked bars when parts contribute to a whole.
+Language for title and summary: {payload.get('model_language', 'es')}.
+Schema/profile: {json.dumps(profiles, ensure_ascii=False)}
+User preferences: {str(payload.get('additional_context', ''))[:12000]}"""
+        messages = [{"role": "system", "content": system}]
+        for item in context:
+            messages.append({"role": "user", "content": item["question"]})
+            messages.append({"role": "assistant", "content": json.dumps({"sql": item["sql"], "summary": item["summary"]}, ensure_ascii=False)})
+        messages.append({"role": "user", "content": question})
+        plan = llm.parse_json(llm.complete(model["config"], messages, json_mode=True))
+    sql = plan.get("sql", "")
+    result = catalog.query(spec, sql)
+    response = {
+        "id": uuid.uuid4().hex[:10], "question": question,
+        "summary": summarize(question, result, plan.get("summary_hint"), payload),
+        "title": plan.get("title", "Resultado"), "sql": sql,
+        "columns": result["columns"], "rows": result["rows"],
+        "chart": choose_chart(plan.get("chart", "auto"), result),
+        "map": detect_map(result),
+        "modules": payload.get("modules") or {"summary": True, "table": True, "chart": True, "map": True, "sql": True},
+        "created_at": int(time.time()),
+    }
+    workspaces.add_message(session["conversation_id"], chat_id, response)
+    return ok(response)
+
+
 @app.post("/api/ask")
 def ask():
     payload = request.get_json(force=True)
@@ -227,6 +361,15 @@ Editable context and user preferences (honor them unless they conflict with safe
 
 def demo_plan(question: str):
     q = question.lower()
+    if any(word in q for word in ("apilad", "stacked")):
+        return {
+            "sql": "SELECT substr(sale_date, 1, 7) AS month, "
+                   "SUM(CASE WHEN category = 'Electrónica' THEN revenue ELSE 0 END) AS electronics, "
+                   "SUM(CASE WHEN category = 'Hogar' THEN revenue ELSE 0 END) AS home, "
+                   "SUM(CASE WHEN category = 'Deporte' THEN revenue ELSE 0 END) AS sport "
+                   "FROM sales GROUP BY substr(sale_date, 1, 7) ORDER BY month",
+            "title": "Ingresos mensuales por categoría", "chart": "stacked_bar",
+        }
     if any(word in q for word in ("ciudad", "mapa", "tienda", "store")):
         return {"sql": "SELECT s.store_name, s.city, s.country, s.latitude, s.longitude, ROUND(SUM(sa.revenue), 2) AS revenue FROM stores s JOIN sales sa ON s.store_id = sa.store_id GROUP BY s.store_id, s.store_name, s.city, s.country, s.latitude, s.longitude ORDER BY revenue DESC", "title": "Ingresos por tienda", "chart": "bar"}
     if any(word in q for word in ("categor", "producto", "donut", "toro")):
@@ -236,16 +379,24 @@ def demo_plan(question: str):
 
 def summarize(question, result, hint, payload):
     rows = result["rows"]
+    language = payload.get("model_language", "es")
+    phrases = {
+        "es": ("La consulta no devolvió resultados para los filtros solicitados.", "He encontrado", "resultados", "El primer registro incluye un valor principal de"),
+        "en": ("The query returned no results for these filters.", "I found", "results", "The first row has a main value of"),
+        "it": ("La query non ha restituito risultati per questi filtri.", "Ho trovato", "risultati", "La prima riga ha un valore principale di"),
+        "de": ("Die Abfrage lieferte für diese Filter keine Ergebnisse.", "Ich habe", "Ergebnisse gefunden", "Der erste Datensatz hat einen Hauptwert von"),
+        "fr": ("La requête n’a renvoyé aucun résultat pour ces filtres.", "J’ai trouvé", "résultats", "La première ligne a une valeur principale de"),
+    }.get(language, ("La consulta no devolvió resultados para los filtros solicitados.", "He encontrado", "resultados", "El primer registro incluye un valor principal de"))
     if not rows:
-        return "La consulta no devolvió resultados para los filtros solicitados."
+        return phrases[0]
     numeric = []
     for value in rows[0].values():
         if isinstance(value, (int, float)):
             numeric.append(value)
-    base = f"He encontrado {len(rows)} resultados"
+    base = f"{phrases[1]} {len(rows)} {phrases[2]}"
     if numeric:
-        base += f". El primer registro incluye un valor principal de {numeric[-1]:,.2f}"
-    return (hint or base) + "."
+        base += f". {phrases[3]} {numeric[-1]:,.2f}"
+    return (hint or base).rstrip(".") + "."
 
 
 def choose_chart(requested, result):

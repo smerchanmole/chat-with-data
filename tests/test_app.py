@@ -45,6 +45,87 @@ class TalkToDataTests(unittest.TestCase):
         history = self.client.get("/api/history").get_json()["data"]
         self.assertEqual(len(history), 1)
 
+    def test_workspace_chats_keep_separate_history_and_binding(self):
+        listing = self.client.get("/api/workspace").get_json()["data"]
+        self.assertEqual([item["id"] for item in listing["connections"]], ["demo"])
+        first = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        second = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        self.assertIn("medidas: revenue, units", first["overview"])
+        english = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo", "model_language": "en"}).get_json()["data"]
+        self.assertIn("Preliminary analysis", english["overview"])
+        response = self.client.post(f"/api/workspace/chats/{first['id']}/ask", json={"question": "Ingresos por mes"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.client.get(f"/api/workspace/chats/{first['id']}").get_json()["data"]["messages"]), 1)
+        self.assertEqual(self.client.get(f"/api/workspace/chats/{second['id']}").get_json()["data"]["messages"], [])
+        self.assertEqual(self.client.post("/api/workspace/chats", json={"connection_id": "missing", "model_id": "demo"}).status_code, 400)
+
+    def test_connection_is_saved_only_after_discovery_and_profile(self):
+        spec = {"engine": "cloudera", "name": "vast-data-demo", "username": "analyst", "workload_password": "secret"}
+        with patch.object(catalog, "databases", return_value=["analytics"]), \
+             patch.object(catalog, "tables", return_value=["sales"]), \
+             patch.object(catalog, "profile", return_value=[{"table":"sales", "sample_rows":2, "columns":[]}]):
+            tested = self.client.post("/api/workspace/connections/discover", json={"spec": spec}).get_json()["data"]
+            self.assertEqual(tested["databases"], ["analytics"])
+            self.assertEqual(self.client.post("/api/workspace/connections/tables", json={"ticket":tested["ticket"], "database":"analytics"}).get_json()["data"], ["sales"])
+            invalid = self.client.post("/api/workspace/connections", json={"ticket":tested["ticket"], "label":"Ventas", "database":"analytics", "tables":["other"]})
+            self.assertEqual(invalid.status_code, 400)
+            saved = self.client.post("/api/workspace/connections", json={"ticket":tested["ticket"], "label":"Ventas", "database":"analytics", "tables":["sales"]}).get_json()["data"]
+        self.assertEqual(saved["label"], "Ventas")
+        self.assertNotIn("workload_password", str(saved))
+        self.assertEqual(self.client.post("/api/workspace/connections", json={"ticket":tested["ticket"], "label":"Otra", "database":"analytics", "tables":["sales"]}).status_code, 400)
+
+    def test_model_requires_successful_test_before_save(self):
+        config = {"endpoint":"https://model.example/v1/chat/completions", "model":"example/model", "auth_type":"jwt", "token":"secret"}
+        self.assertEqual(self.client.post("/api/workspace/models", json={"ticket":"invalid", "label":"Modelo"}).status_code, 400)
+        with patch.object(llm, "resolve", return_value=(config["endpoint"], config["model"], {})), \
+             patch.object(llm, "complete", return_value="CONNECTED"):
+            tested = self.client.post("/api/workspace/models/test", json=config).get_json()["data"]
+        saved = self.client.post("/api/workspace/models", json={"ticket":tested["ticket"], "label":"Modelo probado"}).get_json()["data"]
+        self.assertEqual(saved["model"], "example/model")
+        self.assertNotIn("secret", str(saved))
+
+    def test_discovery_ticket_cannot_be_used_from_another_session(self):
+        other_client = app.test_client()
+        spec = {"engine": "cloudera", "name": "vast-data-demo", "username": "analyst", "workload_password": "secret"}
+        with patch.object(catalog, "databases", return_value=["analytics"]):
+            ticket = self.client.post("/api/workspace/connections/discover", json={"spec": spec}).get_json()["data"]["ticket"]
+        response = other_client.post("/api/workspace/connections/tables", json={"ticket": ticket, "database": "analytics"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_new_connection_does_not_rebind_existing_chat(self):
+        def save_source(name):
+            spec = {"engine": "cloudera", "name": name, "username": "analyst", "workload_password": "secret"}
+            tested = self.client.post("/api/workspace/connections/discover", json={"spec": spec}).get_json()["data"]
+            return self.client.post("/api/workspace/connections", json={"ticket": tested["ticket"], "label": name,
+                                                                     "database": "analytics", "tables": ["sales"]}).get_json()["data"]
+
+        with patch.object(catalog, "databases", return_value=["analytics"]), \
+             patch.object(catalog, "tables", return_value=["sales"]), \
+             patch.object(catalog, "profile", return_value=[{"table": "sales", "sample_rows": 2, "columns": []}]):
+            first = save_source("old-source")
+            second = save_source("new-source")
+        config = {"endpoint": "https://model.example/v1/chat/completions", "model": "example/model", "auth_type": "jwt", "token": "secret"}
+        with patch.object(llm, "resolve", return_value=(config["endpoint"], config["model"], {})), \
+             patch.object(llm, "complete", return_value="CONNECTED"):
+            ticket = self.client.post("/api/workspace/models/test", json=config).get_json()["data"]["ticket"]
+        model = self.client.post("/api/workspace/models", json={"ticket": ticket, "label": "Test model"}).get_json()["data"]
+        with patch.object(llm, "complete", return_value="Overview"):
+            chat = self.client.post("/api/workspace/chats", json={"connection_id": first["id"], "model_id": model["id"]}).get_json()["data"]
+        self.assertNotEqual(chat["connection_id"], second["id"])
+        plan = '{"sql":"SELECT 1 AS value","title":"Result","chart":"bar"}'
+        with patch.object(llm, "complete", return_value=plan), \
+             patch.object(catalog, "query", return_value={"columns": ["value"], "rows": [{"value": 1}]}) as query:
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Check binding"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(query.call_args.args[0]["name"], "old-source")
+
+    def test_error_response_does_not_repeat_password(self):
+        spec = {"engine": "cloudera", "name": "vast-data-demo", "username": "analyst", "workload_password": "secret-value"}
+        with patch.object(catalog, "databases", side_effect=RuntimeError("Failed with secret-value")):
+            response = self.client.post("/api/workspace/connections/discover", json={"spec": spec})
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("secret-value", response.get_data(as_text=True))
+
     def test_editable_profile_context_reaches_the_model(self):
         spec = next(item for item in catalog.connections() if item["name"] == "talk-to-data-demo")
         profiles = catalog.profile(spec, "demo", ["sales"])
@@ -65,6 +146,19 @@ class TalkToDataTests(unittest.TestCase):
         spec = next(item for item in catalog.connections() if item["name"] == "talk-to-data-demo")
         with self.assertRaises(ValueError):
             catalog.query(spec, "DROP TABLE sales")
+
+    def test_requested_sql_limit_is_capped(self):
+        spec = next(item for item in catalog.connections() if item["name"] == "talk-to-data-demo")
+        result = catalog.query(spec, "SELECT sale_id FROM sales LIMIT 9999", limit=5)
+        self.assertEqual(len(result["rows"]), 5)
+        with self.assertRaises(ValueError):
+            catalog.query(spec, "SELECT * FROM sales -- LIMIT 1")
+
+    def test_demo_stacked_chart_returns_multiple_measures(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id":"demo", "model_id":"demo"}).get_json()["data"]
+        response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question":"Muéstrame barras apiladas por mes"}).get_json()["data"]
+        self.assertEqual(response["chart"], "stacked_bar")
+        self.assertEqual(response["columns"], ["month", "electronics", "home", "sport"])
 
     def test_local_and_cml_bindings(self):
         self.assertEqual(resolve_bindings({}), [("127.0.0.1", 8091)])
