@@ -2,7 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   workspace: { connections: [], models: [], chats: [] },
-  chatId: sessionStorage.getItem('ttd-chat-id') || '',
+  chatId: localStorage.getItem('ttd-chat-id') || '',
   view: 'chat', connectionTicket: '', modelTicket: '', pendingConnection: 0, pendingTables: 0, pendingModel: 0,
   modules: { summary: true, table: true, chart: true, map: true, sql: true },
   uiTheme: localStorage.getItem('ttd-theme') || 'dark',
@@ -13,7 +13,7 @@ const state = {
 const translations = {
   en: {
     '＋ Nuevo chat':'＋ New chat','＋ Conexión':'＋ Connection','＋ Modelo':'＋ Model','Chats':'Chats','Conexiones':'Connections','Modelos':'Models',
-    'Datos y credenciales de esta sesión':'Data and credentials for this session','Todavía no hay chats.':'No chats yet.','CONEXIONES':'CONNECTIONS','MODELOS':'MODELS','Espacio de trabajo':'Workspace',
+    'Chats guardados en este navegador':'Chats saved for this browser','Listo para preguntar':'Ready to ask','Solo consulta':'View only','Todavía no hay chats.':'No chats yet.','CONEXIONES':'CONNECTIONS','MODELOS':'MODELS','Espacio de trabajo':'Workspace',
     'Una pregunta empieza':'A question starts','con los datos correctos.':'with the right data.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Create a chat and choose the connection and model. I will analyze the selected tables before your first question.','Crear un chat':'Create a chat','Pregunta':'Question','↵ enviar · ⇧↵ nueva línea':'↵ send · ⇧↵ new line','CONEXIÓN':'CONNECTION','MODELO':'MODEL','ANÁLISIS PRELIMINAR':'PRELIMINARY ANALYSIS','Ya conozco estas tablas':'I have analyzed these tables',
     'Fuentes de datos':'Data sources','Modelos LLM':'LLM models','Conversación':'Conversation',
     'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Test access, choose a database and select up to 12 tables. Profiling runs when you save.',
@@ -33,7 +33,7 @@ const translations = {
   },
   it: {
     '＋ Nuevo chat':'＋ Nuova chat','＋ Conexión':'＋ Connessione','＋ Modelo':'＋ Modello','Chats':'Chat','Conexiones':'Connessioni','Modelos':'Modelli',
-    'Datos y credenciales de esta sesión':'Dati e credenziali di questa sessione','Todavía no hay chats.':'Nessuna chat.','CONEXIONES':'CONNESSIONI','MODELOS':'MODELLI','Espacio de trabajo':'Area di lavoro',
+    'Chats guardados en este navegador':'Chat salvate per questo browser','Listo para preguntar':'Pronta per le domande','Solo consulta':'Sola lettura','Todavía no hay chats.':'Nessuna chat.','CONEXIONES':'CONNESSIONI','MODELOS':'MODELLI','Espacio de trabajo':'Area di lavoro',
     'Una pregunta empieza':'Una domanda inizia','con los datos correctos.':'con i dati giusti.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Crea una chat e scegli connessione e modello. Analizzerò le tabelle selezionate prima della prima domanda.','Crear un chat':'Crea una chat','Pregunta':'Domanda','↵ enviar · ⇧↵ nueva línea':'↵ invia · ⇧↵ nuova riga','CONEXIÓN':'CONNESSIONE','MODELO':'MODELLO','ANÁLISIS PRELIMINAR':'ANALISI PRELIMINARE','Ya conozco estas tablas':'Ho analizzato queste tabelle',
     'Fuentes de datos':'Origini dati','Modelos LLM':'Modelli LLM','Conversación':'Conversazione',
     'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Verifica l’accesso, scegli il database e fino a 12 tabelle. Il profilo viene creato al salvataggio.',
@@ -51,7 +51,7 @@ const translations = {
   },
   de: {
     '＋ Nuevo chat':'＋ Neuer Chat','＋ Conexión':'＋ Verbindung','＋ Modelo':'＋ Modell','Chats':'Chats','Conexiones':'Verbindungen','Modelos':'Modelle',
-    'Datos y credenciales de esta sesión':'Daten und Zugangsdaten dieser Sitzung','Todavía no hay chats.':'Noch keine Chats.','CONEXIONES':'VERBINDUNGEN','MODELOS':'MODELLE','Espacio de trabajo':'Arbeitsbereich',
+    'Chats guardados en este navegador':'Chats für diesen Browser gespeichert','Listo para preguntar':'Bereit für Fragen','Solo consulta':'Nur ansehen','Todavía no hay chats.':'Noch keine Chats.','CONEXIONES':'VERBINDUNGEN','MODELOS':'MODELLE','Espacio de trabajo':'Arbeitsbereich',
     'Una pregunta empieza':'Eine Frage beginnt','con los datos correctos.':'mit den richtigen Daten.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Erstelle einen Chat und wähle Verbindung und Modell. Ich analysiere die Tabellen vor deiner ersten Frage.','Crear un chat':'Chat erstellen','Pregunta':'Frage','↵ enviar · ⇧↵ nueva línea':'↵ senden · ⇧↵ neue Zeile','CONEXIÓN':'VERBINDUNG','MODELO':'MODELL','ANÁLISIS PRELIMINAR':'VORABANALYSE','Ya conozco estas tablas':'Diese Tabellen sind analysiert',
     'Fuentes de datos':'Datenquellen','Modelos LLM':'LLM-Modelle','Conversación':'Unterhaltung',
     'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Prüfe den Zugang, wähle die Datenbank und bis zu 12 Tabellen. Das Profil wird beim Speichern erstellt.',
@@ -69,7 +69,7 @@ const translations = {
   },
   fr: {
     '＋ Nuevo chat':'＋ Nouveau chat','＋ Conexión':'＋ Connexion','＋ Modelo':'＋ Modèle','Chats':'Chats','Conexiones':'Connexions','Modelos':'Modèles',
-    'Datos y credenciales de esta sesión':'Données et identifiants de cette session','Todavía no hay chats.':'Aucun chat pour le moment.','CONEXIONES':'CONNEXIONS','MODELOS':'MODÈLES','Espacio de trabajo':'Espace de travail',
+    'Chats guardados en este navegador':'Chats enregistrés pour ce navigateur','Listo para preguntar':'Prêt pour les questions','Solo consulta':'Lecture seule','Todavía no hay chats.':'Aucun chat pour le moment.','CONEXIONES':'CONNEXIONS','MODELOS':'MODÈLES','Espacio de trabajo':'Espace de travail',
     'Una pregunta empieza':'Une question commence','con los datos correctos.':'avec les bonnes données.','Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.':'Créez un chat et choisissez la connexion et le modèle. J’analyserai les tables avant votre première question.','Crear un chat':'Créer un chat','Pregunta':'Question','↵ enviar · ⇧↵ nueva línea':'↵ envoyer · ⇧↵ nouvelle ligne','CONEXIÓN':'CONNEXION','MODELO':'MODÈLE','ANÁLISIS PRELIMINAR':'ANALYSE PRÉLIMINAIRE','Ya conozco estas tablas':'J’ai analysé ces tables',
     'Fuentes de datos':'Sources de données','Modelos LLM':'Modèles LLM','Conversación':'Conversation',
     'Prueba el acceso, elige la base de datos y selecciona hasta 12 tablas. El perfil se calcula al guardar.':'Testez l’accès, choisissez la base de données et jusqu’à 12 tables. Le profil est créé à l’enregistrement.',
@@ -86,6 +86,10 @@ const translations = {
     'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
   }
 };
+Object.assign(translations.en, {'filas representadas':'rows represented','posiciones en el eje X':'X-axis positions'});
+Object.assign(translations.it, {'filas representadas':'righe rappresentate','posiciones en el eje X':'posizioni sull’asse X'});
+Object.assign(translations.de, {'filas representadas':'dargestellte Zeilen','posiciones en el eje X':'Positionen auf der X-Achse'});
+Object.assign(translations.fr, {'filas representadas':'lignes représentées','posiciones en el eje X':'positions sur l’axe X'});
 const originalText = new WeakMap();
 function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
 function translateStatic() {
@@ -149,10 +153,10 @@ function setView(view) {
   translateStatic();
   if (view === 'chat') renderContext();
 }
-function listItem(item, kind, secondary, active = false) {
+function listItem(item, kind, secondary, active = false, archived = false) {
   const label = escapeHtml(item.label || item.title);
-  return '<div class="sidebar-record' + (active ? ' selected' : '') + '">' +
-    '<button type="button" data-open-' + kind + '="' + escapeHtml(item.id) + '" title="' + label + '">' +
+  return '<div class="sidebar-record' + (active ? ' selected' : '') + (archived ? ' archived' : '') + '">' +
+    '<button type="button" data-open-' + kind + '="' + escapeHtml(item.id) + '" title="' + label + '"' + (active ? ' aria-current="true"' : '') + '>' +
     '<strong>' + label + '</strong><small>' + escapeHtml(secondary) + '</small></button>' +
     (item.id === 'demo' ? '' : '<button type="button" class="record-delete" data-delete-' + kind + '="' + escapeHtml(item.id) + '" aria-label="Eliminar ' + label + '" title="Eliminar">×</button>') +
     '</div>';
@@ -161,7 +165,11 @@ function renderSidebar() {
   one('chat-count').textContent = state.workspace.chats.length;
   one('connection-count').textContent = state.workspace.connections.length;
   one('model-count').textContent = state.workspace.models.length;
-  one('chat-list').innerHTML = state.workspace.chats.map(item => listItem(item,'chat',connectionById(item.connection_id)?.label || 'Conexión eliminada',item.id === state.chatId)).join('') || '<p class="muted-small">'+escapeHtml((translations[state.uiLanguage]||{})['Todavía no hay chats.']||'Todavía no hay chats.')+'</p>';
+  one('chat-list').innerHTML = state.workspace.chats.map(item => {
+    const connected=!!connectionById(item.connection_id)&&!!modelById(item.model_id);
+    const source=connectionById(item.connection_id)?.label || item.connection_snapshot?.label || 'Conexión no disponible';
+    return listItem(item,'chat',source+' · '+t(connected?'Listo para preguntar':'Solo consulta'),item.id === state.chatId,!connected);
+  }).join('') || '<p class="muted-small">'+escapeHtml((translations[state.uiLanguage]||{})['Todavía no hay chats.']||'Todavía no hay chats.')+'</p>';
   one('connection-list').innerHTML = state.workspace.connections.map(item => listItem(item,'connection',item.database + ' · ' + item.tables.length + ' tablas')).join('');
   one('model-list').innerHTML = state.workspace.models.map(item => listItem(item.id==='demo'?{...item,label:t('Modelo de demostración')}:item,'model',item.model)).join('');
 }
@@ -185,10 +193,12 @@ function renderChatSelectors() {
   one('create-chat').disabled = !connection || !model || incompatible;
 }
 function renderContext() {
-  const item = chatById(state.chatId), connection = item && connectionById(item.connection_id), model = item && modelById(item.model_id);
+  const item = chatById(state.chatId), liveConnection = item && connectionById(item.connection_id), liveModel = item && modelById(item.model_id);
+  const connection = liveConnection || item?.connection_snapshot, model = liveModel || item?.model_snapshot;
   one('context-empty').hidden = !!item; one('context-active').hidden = !item;
   one('active-badges').innerHTML = item ? '<span class="source-pill">' + escapeHtml(connection?.label || 'Conexión eliminada') + '</span><span class="source-pill">' + escapeHtml(model?.id==='demo'?t('Modelo de demostración'):model?.label || t('Modelo eliminado')) + '</span>' : '';
-  one('question').disabled = !item || !connection || !model || state.busy;
+  one('question').disabled = !item || !liveConnection || !liveModel || state.busy;
+  one('question').placeholder = item && (!liveConnection || !liveModel) ? ({es:'Historial disponible. La conexión o el modelo ya no están disponibles.',en:'History available. The connection or model is no longer available.',it:'Cronologia disponibile. Connessione o modello non più disponibili.',de:'Verlauf verfügbar. Verbindung oder Modell nicht mehr verfügbar.',fr:'Historique disponible. La connexion ou le modèle n’est plus disponible.'}[state.uiLanguage]) : ({es:'Pregunta algo sobre tus datos…',en:'Ask about your data…',it:'Chiedi qualcosa sui tuoi dati…',de:'Frage etwas zu deinen Daten…',fr:'Posez une question sur vos données…'}[state.uiLanguage]);
   one('send-button').disabled = one('question').disabled;
   if (!item) return;
   one('context-connection').textContent = connection?.label || 'Conexión eliminada';
@@ -198,7 +208,7 @@ function renderContext() {
   const profiles = connection?.profiles || [];
   one('column-count').textContent = profiles.reduce((sum,p) => sum + p.columns.length,0);
   one('context-columns').innerHTML = profiles.map((profile,index) => '<details class="schema-table"' + (index === 0 ? ' open' : '') + '><summary><b>' + escapeHtml(profile.table) + '</b><small>' + profile.columns.length + '</small></summary><div>' + profile.columns.map(column => '<div class="schema-column" title="' + escapeHtml((column.examples || []).join(' · ')) + '"><span><b>' + escapeHtml(column.name) + '</b><small>' + escapeHtml(column.type) + '</small></span><em>' + column.unique + ' '+t('distintos')+'</em></div>').join('') + '</div></details>').join('');
-  one('model-context').value = sessionStorage.getItem('ttd-context-' + item.id) || '';
+  one('model-context').value = item.instructions || '';
   one('active-modules').innerHTML = Object.entries(state.modules).filter(([,on]) => on).map(([name]) => '<span>' + t(({summary:'Resumen',table:'Tabla',chart:'Gráfica',map:'Mapa',sql:'SQL'}[name])) + '</span>').join('');
 }
 function welcome() {
@@ -206,7 +216,7 @@ function welcome() {
 }
 async function openChat(chatId) {
   if (!chatById(chatId)) return;
-  state.chatId = chatId; sessionStorage.setItem('ttd-chat-id',chatId); state.chat = null;
+  state.chatId = chatId; localStorage.setItem('ttd-chat-id',chatId); state.chat = null;
   setView('chat'); renderSidebar(); renderContext();
   one('chat-stream').innerHTML = '<div class="loading-state" role="status">Cargando conversación…</div>';
   try {
@@ -247,7 +257,7 @@ async function ask(question) {
   try {
     const result = await post('/api/workspace/chats/' + encodeURIComponent(chatId) + '/ask', {
       question, modules:state.modules, model_language:state.modelLanguage,
-      additional_context:sessionStorage.getItem('ttd-context-' + chatId) || ''
+      additional_context:chatById(chatId)?.instructions || ''
     });
     typing.remove();
     if (state.chatId === chatId) renderAnswer(result);
@@ -286,29 +296,36 @@ function bindPanel(node,result) {
 function highlightSql(sql) { return escapeHtml(sql).replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|ON|GROUP BY|ORDER BY|LIMIT|AS|SUM|COUNT|AVG|ROUND|DESC|ASC)\b/gi,'<span class="kw">$1</span>'); }
 
 const chartColors=['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-6)'];
+function chartColor(index) { return chartColors[index] || 'hsl(' + ((index * 137.5) % 360) + ' 68% 50%)'; }
 function chartData(result) {
-  const columns=result.columns, rows=result.rows.slice(0,20);
+  const columns=result.columns, rows=result.rows;
   const numeric=columns.filter(col=>!/^(lat|latitude|latitud|lon|lng|longitude|longitud|.*_id)$/i.test(col) && rows.some(row=>typeof row[col]==='number'));
   const categorical=columns.filter(col=>!numeric.includes(col) && !/^(lat|latitude|latitud|lon|lng|longitude|longitud|.*_id)$/i.test(col));
   const xcol=categorical[0] || columns[0];
   let labels=[],series=[];
   if (numeric.length===1 && categorical.length>1) {
-    const groups=[...new Set(rows.map(row=>String(row[categorical[1]]??'')))].slice(0,6);
-    labels=[...new Set(rows.map(row=>String(row[xcol]??'')))].slice(0,20);
-    series=groups.map(group=>({name:group,values:labels.map(label=>Number(rows.find(row=>String(row[xcol]??'')===label && String(row[categorical[1]]??'')===group)?.[numeric[0]])||0)}));
+    const groups=[...new Set(rows.map(row=>String(row[categorical[1]]??'')))];
+    labels=[...new Set(rows.map(row=>String(row[xcol]??'')))];
+    const totals=new Map();
+    rows.forEach(row=>{
+      const key=JSON.stringify([String(row[xcol]??''),String(row[categorical[1]]??'')]);
+      totals.set(key,(totals.get(key)||0)+(Number(row[numeric[0]])||0));
+    });
+    series=groups.map(group=>({name:group,values:labels.map(label=>totals.get(JSON.stringify([label,group]))||0)}));
   } else {
     labels=rows.map(row=>String(row[xcol]??''));
-    series=numeric.slice(0,6).map(name=>({name,values:rows.map(row=>Number(row[name])||0)}));
+    series=numeric.map(name=>({name,values:rows.map(row=>Number(row[name])||0)}));
   }
-  return {labels,series,xcol};
+  return {labels,series,xcol,rowCount:rows.length};
 }
 function renderChart(result) {
   const data=chartData(result);
   if (!data.series.length || !data.labels.length) return '<div class="sql-panel">No hay categorías y medidas numéricas para visualizar.</div>';
-  if (result.chart==='donut' && data.series.length===1) {
+  const count='<p class="chart-count">'+data.rowCount+' '+t('filas representadas')+' · '+data.labels.length+' '+t('posiciones en el eje X')+'</p>';
+  if (result.chart==='donut' && data.series.length===1 && data.labels.length<=16) {
     const values=data.series[0].values,total=values.reduce((a,b)=>a+Math.max(0,b),0)||1;let cursor=0;
-    const stops=values.map((value,i)=>{const start=cursor;cursor+=Math.max(0,value)/total*100;return chartColors[i%chartColors.length]+' '+start+'% '+cursor+'%';}).join(',');
-    return '<div class="donut-wrap"><div class="donut-stack"><div class="donut" style="background:conic-gradient('+stops+')"></div><strong>'+compactNumber(total)+'</strong></div><div class="legend">'+data.labels.map((label,i)=>'<div><i style="background:'+chartColors[i%chartColors.length]+'"></i><span>'+escapeHtml(label)+' · '+formatValue(values[i])+' ('+Math.round(Math.max(0,values[i])/total*100)+'%)</span></div>').join('')+'</div></div>';
+    const stops=values.map((value,i)=>{const start=cursor;cursor+=Math.max(0,value)/total*100;return chartColor(i)+' '+start+'% '+cursor+'%';}).join(',');
+    return '<div class="donut-wrap"><div class="donut-stack"><div class="donut" style="background:conic-gradient('+stops+')"></div><strong>'+compactNumber(total)+'</strong></div><div class="legend">'+data.labels.map((label,i)=>'<div><i style="background:'+chartColor(i)+'"></i><span>'+escapeHtml(label)+' · '+formatValue(values[i])+' ('+Math.round(Math.max(0,values[i])/total*100)+'%)</span></div>').join('')+'</div></div>'+count;
   }
   const isLine=/line/.test(result.chart), stacked=result.chart==='stacked_bar' && data.series.every(s=>s.values.every(v=>v>=0));
   const overallMax=Math.max(...data.series.map(s=>Math.max(...s.values.map(Math.abs),1)));
@@ -317,21 +334,22 @@ function renderChart(result) {
   const secondaryValues=data.series.filter((_,i)=>secondary[i]).flatMap(s=>s.values);
   const leftMin=stacked?0:Math.min(0,...primaryValues),leftMax=stacked?Math.max(...data.labels.map((_,i)=>data.series.reduce((sum,s)=>sum+s.values[i],0)),1):Math.max(1,...primaryValues);
   const rightMin=Math.min(0,...secondaryValues),rightMax=Math.max(1,...secondaryValues);
-  const width=Math.max(680,data.labels.length*58),height=360,left=70,right=secondary.some(Boolean)?74:28,top=50,bottom=85,plotW=width-left-right,plotH=height-top-bottom;
+  const width=Math.max(680,data.labels.length*46),height=360,left=70,right=secondary.some(Boolean)?74:28,top=50,bottom=85,plotW=width-left-right,plotH=height-top-bottom;
   const y=(v,axis)=>{const min=axis?rightMin:leftMin,max=axis?rightMax:leftMax;return top+plotH-(v-min)/(max-min)*plotH;};
   const x=i=>left+plotW*(i+.5)/data.labels.length;
   const grid=Array.from({length:5},(_,i)=>{const value=leftMin+(leftMax-leftMin)*i/4,yy=y(value,false);return '<g><line class="chart-grid" x1="'+left+'" y1="'+yy+'" x2="'+(left+plotW)+'" y2="'+yy+'"/><text class="chart-axis-label" x="'+(left-9)+'" y="'+(yy+4)+'" text-anchor="end">'+compactNumber(value)+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-label" x="'+(left+plotW+9)+'" y="'+(yy+4)+'">'+compactNumber(rightMin+(rightMax-rightMin)*i/4)+'</text>':'')+'</g>';}).join('');
-  const labels=data.labels.map((label,i)=>'<text class="chart-axis-label" transform="translate('+x(i)+','+(top+plotH+18)+') rotate(-35)" text-anchor="end">'+escapeHtml(label.slice(0,18))+'</text>').join('');
+  const labelStep=Math.max(1,Math.ceil(data.labels.length*72/plotW));
+  const labels=data.labels.map((label,i)=>i%labelStep===0?'<text class="chart-axis-label" transform="translate('+x(i)+','+(top+plotH+18)+') rotate(-35)" text-anchor="end">'+escapeHtml(label.slice(0,18))+'</text>':'').join('');
   let marks='';
   if(isLine) {
-    marks=data.series.map((s,j)=>{const coords=s.values.map((v,i)=>[x(i),y(v,secondary[j])]);return '<polyline class="chart-series" fill="none" stroke="'+chartColors[j%chartColors.length]+'" points="'+coords.map(p=>p.join(',')).join(' ')+'"/>'+coords.map((p,i)=>'<circle class="chart-point" cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="var(--chart-surface)" stroke="'+chartColors[j%chartColors.length]+'"><title>'+escapeHtml(data.labels[i]+' · '+s.name)+': '+formatValue(s.values[i])+'</title></circle>').join('');}).join('');
+    marks=data.series.map((s,j)=>{const coords=s.values.map((v,i)=>[x(i),y(v,secondary[j])]);return '<polyline class="chart-series" fill="none" stroke="'+chartColor(j)+'" points="'+coords.map(p=>p.join(',')).join(' ')+'"/>'+coords.map((p,i)=>'<circle class="chart-point" cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="var(--chart-surface)" stroke="'+chartColor(j)+'"><title>'+escapeHtml(data.labels[i]+' · '+s.name)+': '+formatValue(s.values[i])+'</title></circle>').join('');}).join('');
   } else {
     const groupW=plotW/data.labels.length,barW=Math.max(3,Math.min(36,(groupW-12)/(stacked?1:data.series.length)));
-    marks=data.labels.map((label,i)=>{let accumulated=0;return data.series.map((s,j)=>{const v=s.values[i],base=stacked?accumulated:0;accumulated+=v;const xx=stacked?x(i)-barW/2:x(i)-barW*data.series.length/2+j*barW,topY=y(base+v,secondary[j]),zeroY=y(base,secondary[j]),yy=Math.min(topY,zeroY),hh=Math.max(1,Math.abs(topY-zeroY));return '<rect class="chart-rect" x="'+xx+'" y="'+yy+'" width="'+Math.max(1,barW-2)+'" height="'+hh+'" rx="2" fill="'+chartColors[j%chartColors.length]+'"><title>'+escapeHtml(label+' · '+s.name)+': '+formatValue(v)+'</title></rect>';}).join('');}).join('');
+    marks=data.labels.map((label,i)=>{let accumulated=0;return data.series.map((s,j)=>{const v=s.values[i],base=stacked?accumulated:0;accumulated+=v;const xx=stacked?x(i)-barW/2:x(i)-barW*data.series.length/2+j*barW,topY=y(base+v,secondary[j]),zeroY=y(base,secondary[j]),yy=Math.min(topY,zeroY),hh=Math.max(1,Math.abs(topY-zeroY));return '<rect class="chart-rect" x="'+xx+'" y="'+yy+'" width="'+Math.max(1,barW-2)+'" height="'+hh+'" rx="2" fill="'+chartColor(j)+'"><title>'+escapeHtml(label+' · '+s.name)+': '+formatValue(v)+'</title></rect>';}).join('');}).join('');
   }
-  const legend=data.series.map((s,i)=>'<span><i style="background:'+chartColors[i%chartColors.length]+'"></i>'+escapeHtml(s.name)+(secondary[i]?' · eje derecho':'')+'</span>').join('');
+  const legend=data.series.map((s,i)=>'<span><i style="background:'+chartColor(i)+'"></i>'+escapeHtml(s.name)+(secondary[i]?' · eje derecho':'')+'</span>').join('');
   const svg='<svg class="chart-svg" style="min-width:'+width+'px" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escapeHtml(result.title)+'; eje horizontal '+escapeHtml(data.xcol)+'; '+escapeHtml(data.series.map(s=>s.name).join(', '))+'"><title>'+escapeHtml(result.title)+'</title>'+grid+'<line class="chart-axis" x1="'+left+'" y1="'+top+'" x2="'+left+'" y2="'+(top+plotH)+'"/><line class="chart-axis" x1="'+left+'" y1="'+(top+plotH)+'" x2="'+(left+plotW)+'" y2="'+(top+plotH)+'"/>'+labels+marks+'<text class="chart-axis-title" x="'+left+'" y="22">'+escapeHtml(data.series.filter((_,i)=>!secondary[i]).map(s=>s.name).join(' · '))+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-title" x="'+(left+plotW)+'" y="22" text-anchor="end">'+escapeHtml(data.series.filter((_,i)=>secondary[i]).map(s=>s.name).join(' · '))+'</text>':'')+'<text class="chart-axis-title" x="'+(left+plotW/2)+'" y="'+(height-5)+'" text-anchor="middle">'+escapeHtml(data.xcol)+'</text></svg>';
-  return '<div class="chart-panel"><div class="chart-legend">'+legend+'</div>'+svg+'</div>';
+  return '<div class="chart-panel"><div class="chart-legend">'+legend+'</div>'+svg+count+'</div>';
 }
 let mapSequence=0;
 function renderMap(result) {
@@ -473,11 +491,16 @@ async function createChat(event) {
   finally {button.disabled=false;}
 }
 async function deleteItem(kind,id) {
-  if(!window.confirm('¿Eliminar este '+({chat:'chat',connection:'conexión',model:'modelo'}[kind]||'elemento')+'?'))return;
+  const confirmation={
+    chat:'¿Eliminar este chat y todo su historial guardado? No se puede deshacer.',
+    connection:'¿Eliminar esta conexión? Los chats asociados conservarán su historial, pero no podrán recibir nuevas preguntas.',
+    model:'¿Eliminar este modelo? Los chats asociados conservarán su historial, pero no podrán recibir nuevas preguntas.'
+  }[kind];
+  if(!window.confirm(confirmation))return;
   const path=kind==='chat'?'/api/workspace/chats/':'/api/workspace/'+kind+'s/';
   try {
     await api(path+encodeURIComponent(id),{method:'DELETE'});
-    if(kind==='chat'&&state.chatId===id){state.chatId='';state.chat=null;sessionStorage.removeItem('ttd-chat-id');one('chat-stream').innerHTML=welcome();}
+    if(kind==='chat'&&state.chatId===id){state.chatId='';state.chat=null;localStorage.removeItem('ttd-chat-id');one('chat-stream').innerHTML=welcome();}
     translateStatic();
     await refreshWorkspace();toast('Elemento eliminado.');
   } catch(error) {toast(error.message,true);}
@@ -494,6 +517,15 @@ function savePreferences(event) {
   one('preferences-dialog').close();renderContext();toast('Preferencias guardadas.');
 }
 let recognition;
+const instructionTimers = new Map();
+function queueInstructionSave(chatId, instructions) {
+  clearTimeout(instructionTimers.get(chatId));
+  instructionTimers.set(chatId, setTimeout(async () => {
+    instructionTimers.delete(chatId);
+    try { await api('/api/workspace/chats/' + encodeURIComponent(chatId), {method:'PATCH',body:JSON.stringify({instructions})}); }
+    catch(error) { toast('No se guardaron las instrucciones: '+error.message,true); }
+  }, 450));
+}
 function toggleSpeech() {
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){toast('El reconocimiento de voz no está disponible en este navegador.',true);return;}
@@ -535,7 +567,10 @@ function bindEvents() {
   one('chat-connection').addEventListener('change',renderChatSelectors);one('chat-model').addEventListener('change',renderChatSelectors);
   one('new-chat-form').addEventListener('submit',createChat);
   one('preferences-form').addEventListener('submit',savePreferences);
-  one('model-context').addEventListener('input',event=>{if(state.chatId)sessionStorage.setItem('ttd-context-'+state.chatId,event.target.value);});
+  one('model-context').addEventListener('input',event=>{
+    const item=chatById(state.chatId);
+    if(item){item.instructions=event.target.value;queueInstructionSave(item.id,item.instructions);}
+  });
   one('ask-form').addEventListener('submit',event=>{event.preventDefault();ask(value('question'));});
   one('question').addEventListener('input',resizeComposer);
   one('question').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();one('ask-form').requestSubmit();}});
@@ -547,7 +582,11 @@ async function initialize() {
   document.documentElement.lang=state.uiLanguage;
   one('chat-stream').innerHTML=welcome();
   translateStatic();setView('chat');
-  try {await refreshWorkspace();if(chatById(state.chatId))await openChat(state.chatId);}
+  try {
+    await refreshWorkspace();
+    if(!chatById(state.chatId)) state.chatId=state.workspace.chats[0]?.id||'';
+    if(state.chatId) await openChat(state.chatId);
+  }
   catch(error){renderError(error.message);toast(error.message,true);}
   renderContext();
 }

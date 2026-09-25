@@ -1,20 +1,120 @@
-"""Session-scoped connections, tested models and isolated conversations."""
+"""Session-isolated, durable resources and conversation history."""
 
 from __future__ import annotations
 
 import json
+import os
+import sqlite3
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
+
+from cryptography.fernet import Fernet, InvalidToken
+
+
+def load_or_create_key(path: Path, factory) -> str:
+    """Create a private, stable key without replacing an existing key on restart."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        with os.fdopen(descriptor, "w", encoding="ascii") as handle:
+            handle.write(factory())
+    os.chmod(path, 0o600)
+    for _ in range(20):
+        value = path.read_text(encoding="ascii").strip()
+        if value:
+            return value
+        time.sleep(0.05)  # Another worker may still be writing a newly created key.
+    raise RuntimeError(f"La clave local {path.name} está vacía; restáurala desde una copia de seguridad.")
 
 
 class WorkspaceStore:
-    def __init__(self, catalog, llm):
+    def __init__(self, catalog, llm, runtime_dir: Path | None = None):
         self.catalog = catalog
         self.llm = llm
         self.lock = threading.RLock()
         self.sessions: dict[str, dict[str, Any]] = {}
+        self.db_path = None
+        self.cipher = None
+        if runtime_dir is not None:
+            runtime_dir = Path(runtime_dir)
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            self.db_path = runtime_dir / "workspace.db"
+            self.cipher = Fernet(load_or_create_key(runtime_dir / "workspace.key", lambda: Fernet.generate_key().decode()).encode())
+            descriptor = os.open(self.db_path, os.O_WRONLY | os.O_CREAT, 0o600)
+            os.close(descriptor)
+            os.chmod(self.db_path, 0o600)
+            with self._db() as db:
+                db.execute("CREATE TABLE IF NOT EXISTS resources (session_id TEXT NOT NULL, kind TEXT NOT NULL, item_id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY (session_id, kind, item_id))")
+                db.execute("CREATE TABLE IF NOT EXISTS chats (session_id TEXT NOT NULL, chat_id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (session_id, chat_id))")
+                db.execute("CREATE TABLE IF NOT EXISTS messages (session_id TEXT NOT NULL, chat_id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (session_id, chat_id, position))")
+
+    def _db(self):
+        db = sqlite3.connect(self.db_path, timeout=10)
+        db.execute("PRAGMA secure_delete=ON")
+        return db
+
+    def _save_resource(self, session_id: str, kind: str, item: dict) -> None:
+        if self.db_path is None:
+            return
+        payload = self.cipher.encrypt(json.dumps(item, ensure_ascii=False).encode())
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO resources VALUES (?, ?, ?, ?)", (session_id, kind, item["id"], payload))
+
+    def _decode_payload(self, payload: bytes | str) -> dict:
+        if isinstance(payload, str) or payload.startswith(b"{"):
+            # Upgrade plaintext records written by the first local persistence build.
+            return json.loads(payload)
+        return json.loads(self.cipher.decrypt(payload))
+
+    def _save_chat(self, session_id: str, item: dict) -> None:
+        if self.db_path is None:
+            return
+        payload = {key: value for key, value in item.items() if key != "messages"}
+        encrypted = self.cipher.encrypt(json.dumps(payload, ensure_ascii=False).encode())
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO chats VALUES (?, ?, ?)", (session_id, item["id"], encrypted))
+
+    def _restore(self, session_id: str, space: dict) -> None:
+        if self.db_path is None:
+            return
+        migrated = False
+        with self._db() as db:
+            for kind, item_id, payload in db.execute("SELECT kind, item_id, payload FROM resources WHERE session_id=? ORDER BY rowid", (session_id,)):
+                if kind not in {"connections", "models"}:
+                    continue
+                try:
+                    item = self._decode_payload(payload)
+                except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+                    continue
+                space[kind][item_id] = item
+            for chat_id, payload in db.execute("SELECT chat_id, payload FROM chats WHERE session_id=? ORDER BY rowid", (session_id,)):
+                try:
+                    item = self._decode_payload(payload)
+                except (InvalidToken, ValueError, TypeError):
+                    continue
+                if isinstance(payload, str) or payload.startswith(b"{"):
+                    db.execute("UPDATE chats SET payload=? WHERE session_id=? AND chat_id=?", (self.cipher.encrypt(json.dumps(item, ensure_ascii=False).encode()), session_id, chat_id))
+                    migrated = True
+                item["messages"] = []
+                for position, message_payload in db.execute("SELECT position, payload FROM messages WHERE session_id=? AND chat_id=? ORDER BY position", (session_id, chat_id)):
+                    try:
+                        message = self._decode_payload(message_payload)
+                        item["messages"].append(message)
+                        if isinstance(message_payload, str) or message_payload.startswith(b"{"):
+                            db.execute("UPDATE messages SET payload=? WHERE session_id=? AND chat_id=? AND position=?", (self.cipher.encrypt(json.dumps(message, ensure_ascii=False).encode()), session_id, chat_id, position))
+                            migrated = True
+                    except (InvalidToken, ValueError, TypeError):
+                        continue
+                space["chats"][chat_id] = item
+        if migrated:
+            with self._db() as db:
+                db.execute("VACUUM")
 
     def _space(self, session_id: str) -> dict[str, Any]:
         with self.lock:
@@ -31,6 +131,7 @@ class WorkspaceStore:
                     "models": {"demo": {"id": "demo", "label": "Modelo de demostración", "config": {}, "built_in": True}},
                     "chats": {}, "connection_tests": {}, "model_tests": {}, "last_used": now,
                 }
+                self._restore(session_id, self.sessions[session_id])
             self.sessions[session_id]["last_used"] = now
             return self.sessions[session_id]
 
@@ -50,7 +151,7 @@ class WorkspaceStore:
 
     @staticmethod
     def _chat_view(item: dict) -> dict:
-        return {key: item[key] for key in ("id", "title", "connection_id", "model_id", "created_at", "overview", "warning")}
+        return {key: item.get(key) for key in ("id", "title", "connection_id", "model_id", "created_at", "overview", "warning", "connection_snapshot", "model_snapshot", "instructions")}
 
     def listing(self, session_id: str) -> dict:
         space = self._space(session_id)
@@ -96,6 +197,7 @@ class WorkspaceStore:
                 "tables": tables, "profiles": profiles}
         with self.lock:
             self._tested(space["connection_tests"], ticket)
+            self._save_resource(session_id, "connections", item)
             space["connections"][item["id"]] = item
             space["connection_tests"].pop(ticket, None)
         return self._connection_view(item)
@@ -121,6 +223,7 @@ class WorkspaceStore:
         item = {"id": self._id(), "label": label.strip(), "config": dict(test["config"])}
         with self.lock:
             self._tested(space["model_tests"], ticket)
+            self._save_resource(session_id, "models", item)
             space["models"][item["id"]] = item
             space["model_tests"].pop(ticket, None)
         return self._model_view(item)
@@ -194,10 +297,13 @@ class WorkspaceStore:
                 warning = f"El modelo no respondió al análisis preliminar: {detail[:300]}"
         item = {"id": self._id(), "title": f"{connection['label']} · Nuevo chat", "connection_id": connection_id,
                 "model_id": model_id, "created_at": int(time.time()), "overview": overview,
-                "warning": warning, "messages": []}
+                "warning": warning, "messages": [], "instructions": "",
+                "connection_snapshot": self._connection_view(connection),
+                "model_snapshot": {key: value for key, value in self._model_view(model).items() if key != "endpoint"}}
         with self.lock:
             if connection_id not in space["connections"] or model_id not in space["models"]:
                 raise ValueError("La conexión o el modelo se eliminaron mientras se creaba el chat.")
+            self._save_chat(session_id, item)
             space["chats"][item["id"]] = item
         return self._chat_view(item)
 
@@ -223,10 +329,46 @@ class WorkspaceStore:
         if not chat:
             return
         with self.lock:
+            first = not chat["messages"]
+            if self.db_path is not None:
+                updated = {**chat, "title": response["question"][:70] if first else chat["title"]}
+                with self._db() as db:
+                    position = db.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM messages WHERE session_id=? AND chat_id=?", (session_id, chat_id)).fetchone()[0]
+                    db.execute("INSERT INTO messages VALUES (?, ?, ?, ?)", (session_id, chat_id, position, self.cipher.encrypt(json.dumps(response, ensure_ascii=False).encode())))
+                    db.execute("UPDATE chats SET payload=? WHERE session_id=? AND chat_id=?", (self.cipher.encrypt(json.dumps({k: v for k, v in updated.items() if k != "messages"}, ensure_ascii=False).encode()), session_id, chat_id))
             chat["messages"].append(response)
-            chat["messages"] = chat["messages"][-30:]
-            if len(chat["messages"]) == 1:
+            if first:
                 chat["title"] = response["question"][:70]
+
+    def set_instructions(self, session_id: str, chat_id: str, instructions: str) -> dict:
+        if not isinstance(instructions, str) or len(instructions) > 12000:
+            raise ValueError("Las instrucciones deben tener como máximo 12000 caracteres.")
+        space = self._space(session_id)
+        with self.lock:
+            chat = space["chats"].get(chat_id)
+            if not chat:
+                raise ValueError("No se encontró este chat.")
+            updated = {**chat, "instructions": instructions}
+            self._save_chat(session_id, updated)
+            chat["instructions"] = instructions
+            return self._chat_view(chat)
+
+    def redact_error(self, session_id: str, message: str) -> str:
+        space = self._space(session_id)
+        with self.lock:
+            for item in space["connections"].values():
+                spec = item.get("spec", {})
+                for key in ("password", "workload_password"):
+                    secret = spec.get(key)
+                    if isinstance(secret, str) and len(secret) > 2:
+                        message = message.replace(secret, "[oculto]")
+            for item in space["models"].values():
+                config = item.get("config", {})
+                for key in ("token", "api_key_value"):
+                    secret = config.get(key)
+                    if isinstance(secret, str) and len(secret) > 2:
+                        message = message.replace(secret, "[oculto]")
+        return message
 
     def delete(self, session_id: str, kind: str, item_id: str) -> None:
         space = self._space(session_id)
@@ -235,5 +377,13 @@ class WorkspaceStore:
         if item_id == "demo":
             raise ValueError("Los elementos de demostración no se pueden eliminar.")
         with self.lock:
-            if space[kind].pop(item_id, None) is None:
+            if item_id not in space[kind]:
                 raise ValueError("No se encontró el elemento.")
+            if self.db_path is not None:
+                with self._db() as db:
+                    if kind == "chats":
+                        db.execute("DELETE FROM messages WHERE session_id=? AND chat_id=?", (session_id, item_id))
+                        db.execute("DELETE FROM chats WHERE session_id=? AND chat_id=?", (session_id, item_id))
+                    else:
+                        db.execute("DELETE FROM resources WHERE session_id=? AND kind=? AND item_id=?", (session_id, kind, item_id))
+            space[kind].pop(item_id)

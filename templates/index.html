@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#07111f"><title>Talk to Data</title>
   <script>document.documentElement.dataset.theme=localStorage.getItem('ttd-theme')||'dark'</script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
   <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
@@ -19,7 +19,7 @@
         <section><h2>CONEXIONES <span id="connection-count">0</span></h2><div id="connection-list" class="sidebar-list"></div></section>
         <section><h2>MODELOS <span id="model-count">0</span></h2><div id="model-list" class="sidebar-list"></div></section>
       </div>
-      <div class="sidebar-foot"><span>Datos y credenciales de esta sesión</span><button id="open-preferences" class="icon-button" type="button" aria-label="Preferencias">⚙</button></div>
+      <div class="sidebar-foot"><span>Chats guardados en este navegador</span><button id="open-preferences" class="icon-button" type="button" aria-label="Preferencias">⚙</button></div>
     </aside>
     <main class="workspace">
       <header class="topbar"><div><div class="crumb">Espacio de trabajo <b>/</b> <strong id="view-crumb">Chats</strong></div><h1 id="view-title">Conversación</h1></div><div class="top-actions"><div id="active-badges" class="top-actions"></div><button id="context-toggle" class="icon-button" type="button" aria-label="Mostrar contexto del chat" aria-controls="context-panel" aria-expanded="false">▤</button></div></header>
@@ -51,5 +51,5 @@
   <dialog id="preferences-dialog"><form id="preferences-form" class="compact-dialog" method="dialog"><header><div><p class="eyebrow">PREFERENCIAS</p><h2>Cómo responder</h2></div><button type="button" data-close-dialog aria-label="Cerrar">×</button></header><fieldset class="preference-modules"><legend>Módulos</legend><label><input type="checkbox" data-module="summary" checked> Resumen</label><label><input type="checkbox" data-module="table" checked> Tabla</label><label><input type="checkbox" data-module="chart" checked> Gráfica</label><label><input type="checkbox" data-module="map" checked> Mapa</label><label><input type="checkbox" data-module="sql" checked> SQL</label></fieldset><label>Idioma de la aplicación<select id="ui-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Idioma de las respuestas<select id="model-language"><option value="es">Español</option><option value="en">English</option><option value="it">Italiano</option><option value="de">Deutsch</option><option value="fr">Français</option></select></label><label>Apariencia<select id="ui-theme"><option value="dark">Oscura</option><option value="light">Clara</option></select></label><footer><button type="button" class="secondary-button" data-close-dialog>Cancelar</button><button type="submit" class="primary-button">Guardar preferencias</button></footer></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-  <script src="/static/app.js?v=5" defer></script>
+  <script src="/static/app.js?v=6" defer></script>
 </body></html>

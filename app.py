@@ -14,6 +14,7 @@ DEPENDENCIES = {
     "pandas": "pandas>=2.0,<3",
     "psycopg": "psycopg[binary]>=3.1,<4",
     "trino": "trino>=0.333,<1",
+    "cryptography": "cryptography>=42,<47",
 }
 
 
@@ -35,6 +36,7 @@ import re
 import secrets
 import time
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, session
@@ -43,7 +45,7 @@ from werkzeug.serving import make_server
 
 from data_connector import DataCatalog
 from llm_client import LLMClient
-from workspace_store import WorkspaceStore
+from workspace_store import WorkspaceStore, load_or_create_key
 
 
 def resolve_base_dir(file_name=None, working_directory=None):
@@ -54,12 +56,15 @@ def resolve_base_dir(file_name=None, working_directory=None):
 
 
 BASE_DIR = resolve_base_dir(globals().get("__file__"))
+RUNTIME_DIR = BASE_DIR / "runtime"
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
-app.config.update(JSON_SORT_KEYS=False, MAX_CONTENT_LENGTH=1_000_000)
-catalog = DataCatalog(BASE_DIR / "runtime")
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or load_or_create_key(RUNTIME_DIR / "session.key", lambda: secrets.token_hex(32))
+app.config.update(JSON_SORT_KEYS=False, MAX_CONTENT_LENGTH=1_000_000,
+                  PERMANENT_SESSION_LIFETIME=timedelta(days=365), SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_HTTPONLY=True)
+catalog = DataCatalog(RUNTIME_DIR)
 llm = LLMClient()
-workspaces = WorkspaceStore(catalog, llm)
+workspaces = WorkspaceStore(catalog, llm, RUNTIME_DIR)
 memory: dict[str, list[dict]] = {}
 
 
@@ -108,6 +113,7 @@ def selected_connection(payload):
 
 @app.before_request
 def ensure_session():
+    session.permanent = True
     if "conversation_id" not in session:
         session["conversation_id"] = uuid.uuid4().hex
 
@@ -132,6 +138,8 @@ def handle_error(exc):
                     yield from secrets_in(item)
         for secret in secrets_in(payload):
             message = message.replace(secret, "[oculto]")
+    if "conversation_id" in session:
+        message = workspaces.redact_error(session["conversation_id"], message)
     return jsonify({"ok": False, "error": message}), status
 
 
@@ -252,6 +260,12 @@ def workspace_get_chat(chat_id):
     return ok(workspaces.chat(session["conversation_id"], chat_id))
 
 
+@app.patch("/api/workspace/chats/<chat_id>")
+def workspace_update_chat(chat_id):
+    payload = request.get_json(force=True)
+    return ok(workspaces.set_instructions(session["conversation_id"], chat_id, payload.get("instructions", "")))
+
+
 @app.delete("/api/workspace/chats/<chat_id>")
 def workspace_delete_chat(chat_id):
     workspaces.delete(session["conversation_id"], "chats", chat_id)
@@ -265,8 +279,10 @@ def workspace_ask(chat_id):
     if not question or len(question) > 2000:
         raise ValueError("Escribe una pregunta de hasta 2000 caracteres.")
     chat, connection, model = workspaces.binding(session["conversation_id"], chat_id)
+    if "additional_context" in payload:
+        chat = workspaces.set_instructions(session["conversation_id"], chat_id, payload["additional_context"])
     spec, profiles = connection["spec"], connection["profiles"]
-    context = chat["messages"][-6:]
+    context = workspaces.chat(session["conversation_id"], chat_id)["messages"][-6:]
     if model.get("built_in"):
         plan = demo_plan(question)
         demo_titles = {
@@ -285,7 +301,7 @@ chart must be one of auto, bar, stacked_bar, line, multi_line, donut, none.
 Use secondary axes for numeric measures with materially different scales. Use stacked bars when parts contribute to a whole.
 Language for title and summary: {payload.get('model_language', 'es')}.
 Schema/profile: {json.dumps(profiles, ensure_ascii=False)}
-User preferences: {str(payload.get('additional_context', ''))[:12000]}"""
+User preferences: {chat.get('instructions', '')}"""
         messages = [{"role": "system", "content": system}]
         for item in context:
             messages.append({"role": "user", "content": item["question"]})

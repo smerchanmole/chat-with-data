@@ -30,7 +30,9 @@ No es necesario definir una variable `PORT` ni utilizar un script de shell entre
 
 En el lateral izquierdo puedes crear **chats**, **conexiones** y **modelos**. La conexión se prueba antes de guardarla: eliges la base o esquema y entre 1 y 12 tablas, y la app calcula su perfil. El modelo debe responder a una petición de prueba antes de poder guardarse. Al crear un chat, seleccionas una conexión y un modelo guardados. El chat empieza con un análisis preliminar del perfil y mantiene su propio historial, sin mezclar preguntas de otros chats.
 
-Las conexiones, modelos, credenciales y chats permanecen en memoria del proceso durante la sesión. Al reiniciar el servidor hay que configurarlos de nuevo; ningún secreto se persiste en disco ni se envía en la cookie. Los chats cuyo modelo o conexión se elimine conservan su historial para consulta, pero ya no aceptan nuevas preguntas.
+Los chats, conexiones y modelos se guardan en `runtime/workspace.db` y se recuperan tras reiniciar la aplicación, asociados por sus identificadores originales. Cada chat conserva el análisis preliminar, las instrucciones adicionales y todas sus preguntas, respuestas, resultados, gráficas y SQL. La barra izquierda muestra primero los chats más recientes y permite saltar entre ellos. Se recuerda el chat abierto en el navegador. Los chats cuyo modelo o conexión se elimine conservan su historial para consulta, pero ya no aceptan nuevas preguntas.
+
+Las configuraciones, credenciales, perfiles, SQL y resultados se cifran antes de escribirse en SQLite; la clave local está en `runtime/workspace.key`. La cookie firmada usa `FLASK_SECRET_KEY` o, si no se configura, una clave local estable en `runtime/session.key`. Conserva estos ficheros al actualizar o mover la aplicación y protege el directorio `runtime`; **no los subas al repositorio**. El acceso al historial queda ligado a la cookie de ese navegador (duración máxima de un año); borrar cookies o cambiar de navegador exige un mecanismo de autenticación/transferencia que esta versión aún no ofrece. Los tokens pueden caducar y requerir una nueva configuración. No hay sincronización entre usuarios o dispositivos.
 
 ## Fuentes de datos
 
@@ -62,13 +64,13 @@ También se puede configurar directamente desde la interfaz con:
 jdbc:trino://virtual-warehouse.environment.dwx.company.com:443/catalog/schema
 ```
 
-La URL se traduce al cliente Python de Trino. Si no incluye catálogo o esquema, el asistente descubre primero los catálogos y sus esquemas. Se admite autenticación básica opcional; los valores permanecen únicamente en memoria del servidor durante la sesión.
+La URL se traduce al cliente Python de Trino. Si no incluye catálogo o esquema, el asistente descubre primero los catálogos y sus esquemas. Se admite autenticación básica opcional; los valores se almacenan cifrados en el servidor.
 
 ## Apariencia
 
-En **Preferencias → Apariencia** se puede alternar entre tema oscuro y claro. La preferencia se conserva localmente en el navegador; las credenciales siguen siendo únicamente de sesión.
+En **Preferencias → Apariencia** se puede alternar entre tema oscuro y claro. La preferencia se conserva localmente en el navegador; las credenciales se almacenan cifradas en el servidor.
 
-El lateral derecho muestra las columnas perfiladas de cada tabla, incluidos tipo y cardinalidad de la muestra. Las tablas de resultados incluyen número de fila, las gráficas muestran ejes, escalas, etiquetas y hasta seis series, con eje secundario cuando las escalas difieren mucho; hay barras agrupadas o apiladas y líneas múltiples. Los resultados geográficos se representan sobre un mapa Leaflet con cartografía de OpenStreetMap.
+El lateral derecho muestra las columnas perfiladas de cada tabla, incluidos tipo y cardinalidad de la muestra. Las tablas de resultados incluyen número de fila. Las gráficas utilizan todas las filas devueltas por la consulta, agrupan pares categoría/serie repetidos y ofrecen desplazamiento horizontal cuando hay muchos puntos; muestran ejes, escalas, etiquetas y series múltiples, con eje secundario cuando las escalas difieren mucho. Hay barras agrupadas o apiladas y líneas múltiples. Los resultados geográficos se representan sobre un mapa Leaflet con cartografía de OpenStreetMap.
 
 ## Modelo LLM
 
@@ -88,8 +90,8 @@ El prompt contiene solo los perfiles de las tablas seleccionadas en ese chat y s
 - Se bloquean sentencias múltiples y operaciones de escritura o administración.
 - Las conexiones se cierran después de cada consulta.
 - El perfilado usa como máximo 100 filas y 12 tablas.
-- La memoria es temporal, se separa por cookie de sesión y por chat, y conserva hasta 30 respuestas por chat.
-- Los secretos del modelo, PostgreSQL, Trino y Cloudera no se escriben en disco, cookies ni `localStorage`.
+- Cada navegador conserva sus chats, conexiones y modelos por medio de una cookie firmada; el historial no tiene un límite artificial de 30 respuestas.
+- Los secretos del modelo, PostgreSQL, Trino y Cloudera, así como el historial, se guardan cifrados en `runtime/workspace.db`, nunca en cookies ni `localStorage`. La clave de descifrado local no se incluye en Git.
 
 ## Pruebas
 
@@ -97,7 +99,7 @@ El prompt contiene solo los perfiles de las tablas seleccionadas en ese chat y s
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Las pruebas cubren catálogo, perfilado, aislamiento de chats, prueba obligatoria de modelos, validación de conexiones, límite de filas y bloqueo de SQL destructivo.
+Las pruebas cubren catálogo, perfilado, aislamiento y restauración de chats, cifrado de recursos e historial, prueba obligatoria de modelos, validación de conexiones, límite de filas y bloqueo de SQL destructivo. La representación completa de gráficas puede comprobarse adicionalmente con `node --test tests/test_charts.js`.
 
 ## Estructura
 

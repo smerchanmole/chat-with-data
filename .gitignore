@@ -2,6 +2,6 @@ __pycache__/
 .venv/
 runtime/*.db
 runtime/*.json
+runtime/*.key
 .env
 .DS_Store
-
