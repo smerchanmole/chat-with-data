@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">Ciclo de vida de un chat</title>
+  <desc id="desc">Primero se prueba una conexión y un modelo, después se crea un chat ligado a ambos, se perfilan las tablas, y las preguntas y respuestas permanecen en ese chat.</desc>
+  <rect width="1200" height="300" rx="30" fill="#f5f7fb"/>
+  <g font-family="Inter,Arial,sans-serif">
+    <text x="48" y="52" fill="#cf5c28" font-size="15" font-weight="800" letter-spacing="3">UN CHAT, UNA FUENTE, UN MODELO</text>
+    <text x="48" y="92" fill="#15223a" font-size="28" font-weight="800">Las conversaciones se recuperan sin cambiar de conexión.</text>
+    <g fill="white" stroke="#d8dfe9">
+      <rect x="45" y="130" width="245" height="115" rx="18"/><rect x="332" y="130" width="245" height="115" rx="18"/><rect x="619" y="130" width="245" height="115" rx="18"/><rect x="906" y="130" width="249" height="115" rx="18"/>
+    </g>
+    <g fill="#ff8249" font-size="23" font-weight="800"><text x="64" y="165">01</text><text x="351" y="165">02</text><text x="638" y="165">03</text><text x="925" y="165">04</text></g>
+    <g fill="#15223a" font-size="17" font-weight="700"><text x="64" y="195">Probar conexión</text><text x="351" y="195">Probar modelo</text><text x="638" y="195">Crear chat</text><text x="925" y="195">Preguntar y volver</text></g>
+    <g fill="#53647d" font-size="13"><text x="64" y="220">Base + tablas + perfil</text><text x="351" y="220">Endpoint + credenciales</text><text x="638" y="220">Vínculo fijo + análisis</text><text x="925" y="220">Historial + SQL + resultados</text></g>
+    <g fill="#ff8249"><path d="m298 182 19 8-19 8z"/><path d="m585 182 19 8-19 8z"/><path d="m872 182 19 8-19 8z"/></g>
+    <text x="48" y="280" fill="#64748b" font-size="13">El historial se cifra en SQLite y se asocia a la sesión de ese navegador.</text>
+  </g>
+</svg>

@@ -245,6 +245,9 @@ class WorkspaceStore:
     def _overview(connection: dict, language: str = "es") -> str:
         words = {
             "es": ("Análisis preliminar de", "filas muestreadas", "columnas", "medidas", "fechas", "categorías", "nulos en la muestra", "ejemplos", "Puedes preguntar por tendencias, comparaciones y relaciones entre estas tablas."),
+            "ca": ("Anàlisi preliminar de", "files de la mostra", "columnes", "mesures", "dates", "categories", "valors nuls a la mostra", "exemples", "Pots preguntar per tendències, comparacions i relacions entre aquestes taules."),
+            "eu": ("Aurretiazko analisia:", "lagineko errenkada", "zutabe", "neurriak", "datak", "kategoriak", "lagineko balio nuluak", "adibideak", "Taula hauen joerei, konparazioei eta erlazioei buruz galdetu dezakezu."),
+            "gl": ("Análise preliminar de", "filas da mostra", "columnas", "medidas", "datas", "categorías", "nulos na mostra", "exemplos", "Podes preguntar por tendencias, comparacións e relacións entre estas táboas."),
             "en": ("Preliminary analysis of", "sampled rows", "columns", "measures", "dates", "categories", "nulls in the sample", "examples", "You can ask about trends, comparisons and relationships between these tables."),
             "it": ("Analisi preliminare di", "righe campionate", "colonne", "misure", "date", "categorie", "nulli nel campione", "esempi", "Puoi chiedere tendenze, confronti e relazioni tra queste tabelle."),
             "de": ("Vorabanalyse von", "Stichprobenzeilen", "Spalten", "Kennzahlen", "Datumsfelder", "Kategorien", "Nullwerte in der Stichprobe", "Beispiele", "Du kannst nach Trends, Vergleichen und Beziehungen zwischen diesen Tabellen fragen."),
@@ -283,8 +286,9 @@ class WorkspaceStore:
         overview = self._overview(connection, language)
         warning = ""
         if not model.get("built_in"):
-            prompt = (f"Summarize the following schema and examples in 4 concise points. Write in language {language}. "
-                      "Identifica medidas, dimensiones, fechas y posibles preguntas. "
+            language_names = {"es": "Spanish", "ca": "Catalan", "eu": "Basque", "gl": "Galician", "en": "English", "fr": "French", "it": "Italian", "de": "German"}
+            prompt = (f"Summarize the following schema and examples in 4 concise points. Write only in {language_names.get(language, 'Spanish')}. "
+                      "Identify measures, dimensions, dates and possible questions. "
                       "No inventes estadísticas ni ejecutes SQL.\n" + json.dumps(connection["profiles"], ensure_ascii=False)[:14000])
             try:
                 overview = self.llm.complete(model["config"], [{"role": "user", "content": prompt}]).strip() or overview

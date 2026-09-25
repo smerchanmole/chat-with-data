@@ -66,6 +66,34 @@ catalog = DataCatalog(RUNTIME_DIR)
 llm = LLMClient()
 workspaces = WorkspaceStore(catalog, llm, RUNTIME_DIR)
 memory: dict[str, list[dict]] = {}
+MODEL_LANGUAGES = {"es": "Spanish", "ca": "Catalan", "eu": "Basque", "gl": "Galician",
+                   "en": "English", "fr": "French", "it": "Italian", "de": "German"}
+
+
+def response_language(payload):
+    code = payload.get("model_language", "es")
+    return code if code in MODEL_LANGUAGES else "es"
+
+
+class QueryFailure(Exception):
+    def __init__(self, stage: str, sql: str, cause: Exception):
+        self.stage = stage
+        self.sql = sql
+        self.cause = cause
+        super().__init__("No se pudo completar la pregunta.")
+
+
+def cause_details(exc: Exception) -> str:
+    details = []
+    seen = set()
+    current = exc
+    while current is not None and id(current) not in seen and len(details) < 4:
+        seen.add(id(current))
+        message = str(current).strip() or type(current).__name__
+        if message not in details:
+            details.append(message)
+        current = current.__cause__ or current.__context__
+    return " | ".join(details)[:2000]
 
 
 def ok(data=None, **extra):
@@ -122,6 +150,14 @@ def ensure_session():
 def handle_error(exc):
     if isinstance(exc, HTTPException):
         return jsonify({"ok": False, "error": exc.description}), exc.code
+    if isinstance(exc, QueryFailure):
+        session_id = session.get("conversation_id", "")
+        cause = cause_details(exc.cause)
+        sql = exc.sql
+        if session_id:
+            cause = workspaces.redact_error(session_id, cause)
+            sql = workspaces.redact_error(session_id, sql)
+        return jsonify({"ok": False, "error": str(exc), "cause": cause, "sql": sql, "stage": exc.stage}), 422
     status = 400 if isinstance(exc, (ValueError, RuntimeError)) else 500
     message = str(exc) if status == 400 else "Error interno al procesar la petición. Inténtalo de nuevo."
     payload = request.get_json(silent=True) if request.is_json else None
@@ -252,7 +288,7 @@ def workspace_delete_model(item_id):
 @app.post("/api/workspace/chats")
 def workspace_create_chat():
     payload = request.get_json(force=True)
-    return ok(workspaces.create_chat(session["conversation_id"], payload.get("connection_id", ""), payload.get("model_id", ""), payload.get("model_language", "es")))
+    return ok(workspaces.create_chat(session["conversation_id"], payload.get("connection_id", ""), payload.get("model_id", ""), response_language(payload)))
 
 
 @app.get("/api/workspace/chats/<chat_id>")
@@ -279,41 +315,68 @@ def workspace_ask(chat_id):
     if not question or len(question) > 2000:
         raise ValueError("Escribe una pregunta de hasta 2000 caracteres.")
     chat, connection, model = workspaces.binding(session["conversation_id"], chat_id)
+    language = response_language(payload)
     if "additional_context" in payload:
         chat = workspaces.set_instructions(session["conversation_id"], chat_id, payload["additional_context"])
     spec, profiles = connection["spec"], connection["profiles"]
     context = workspaces.chat(session["conversation_id"], chat_id)["messages"][-6:]
+    def fail(stage, sql, exc):
+        failure = QueryFailure(stage, sql, exc)
+        workspaces.add_message(session["conversation_id"], chat_id, {
+            "id": uuid.uuid4().hex[:10], "kind": "error", "question": question,
+            "error": str(failure), "cause": workspaces.redact_error(session["conversation_id"], cause_details(exc)),
+            "stage": stage, "sql": workspaces.redact_error(session["conversation_id"], sql), "created_at": int(time.time()),
+        })
+        raise failure from exc
+
     if model.get("built_in"):
-        plan = demo_plan(question)
+        try:
+            plan = demo_plan(question)
+        except Exception as exc:
+            fail("generation", "", exc)
         demo_titles = {
+            "ca": {"Evolución mensual": "Evolució mensual", "Ingresos por tienda": "Ingressos per botiga", "Rendimiento por categoría": "Rendiment per categoria", "Ingresos mensuales por categoría": "Ingressos mensuals per categoria"},
+            "eu": {"Evolución mensual": "Hileko bilakaera", "Ingresos por tienda": "Dendako diru-sarrerak", "Rendimiento por categoría": "Kategoriaren araberako errendimendua", "Ingresos mensuales por categoría": "Kategoriaren araberako hileko diru-sarrerak"},
+            "gl": {"Evolución mensual": "Evolución mensual", "Ingresos por tienda": "Ingresos por tenda", "Rendimiento por categoría": "Rendemento por categoría", "Ingresos mensuales por categoría": "Ingresos mensuais por categoría"},
             "en": {"Evolución mensual": "Monthly trend", "Ingresos por tienda": "Revenue by store", "Rendimiento por categoría": "Performance by category", "Ingresos mensuales por categoría": "Monthly revenue by category"},
             "it": {"Evolución mensual": "Andamento mensile", "Ingresos por tienda": "Ricavi per negozio", "Rendimiento por categoría": "Risultati per categoria", "Ingresos mensuales por categoría": "Ricavi mensili per categoria"},
             "de": {"Evolución mensual": "Monatliche Entwicklung", "Ingresos por tienda": "Umsatz nach Filiale", "Rendimiento por categoría": "Leistung nach Kategorie", "Ingresos mensuales por categoría": "Monatsumsatz nach Kategorie"},
             "fr": {"Evolución mensual": "Évolution mensuelle", "Ingresos por tienda": "Revenus par magasin", "Rendimiento por categoría": "Performance par catégorie", "Ingresos mensuales por categoría": "Revenus mensuels par catégorie"},
         }
-        plan["title"] = demo_titles.get(payload.get("model_language"), {}).get(plan["title"], plan["title"])
+        plan["title"] = demo_titles.get(language, {}).get(plan["title"], plan["title"])
     else:
         dialect = {"postgresql": "PostgreSQL", "trino": "Trino SQL", "cloudera": "HiveQL" if spec.get("dialect") == "hive" else "Impala SQL",
                    "sqlite": "SQLite"}.get(spec["engine"], spec["engine"])
         system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
-Use only read-only {dialect}. Use only the supplied tables and columns. Always include LIMIT 500 or less.
+Use only read-only {dialect}. Use only the supplied tables and columns. For SELECT/WITH, include LIMIT 500 or less. Never add LIMIT to SHOW, DESCRIBE or EXPLAIN.
 chart must be one of auto, bar, stacked_bar, line, multi_line, donut, none.
 Use secondary axes for numeric measures with materially different scales. Use stacked bars when parts contribute to a whole.
-Language for title and summary: {payload.get('model_language', 'es')}.
+Language for title and summary: {MODEL_LANGUAGES[language]}.
 Schema/profile: {json.dumps(profiles, ensure_ascii=False)}
 User preferences: {chat.get('instructions', '')}"""
         messages = [{"role": "system", "content": system}]
         for item in context:
             messages.append({"role": "user", "content": item["question"]})
-            messages.append({"role": "assistant", "content": json.dumps({"sql": item["sql"], "summary": item["summary"]}, ensure_ascii=False)})
+            previous = {"sql": item.get("sql", ""), "error": item.get("cause", "")} if item.get("kind") == "error" else {"sql": item["sql"], "summary": item["summary"]}
+            messages.append({"role": "assistant", "content": json.dumps(previous, ensure_ascii=False)})
         messages.append({"role": "user", "content": question})
-        plan = llm.parse_json(llm.complete(model["config"], messages, json_mode=True))
-    sql = plan.get("sql", "")
-    result = catalog.query(spec, sql)
+        try:
+            plan = llm.parse_json(llm.complete(model["config"], messages, json_mode=True))
+        except Exception as exc:
+            fail("generation", "", exc)
+    sql = str(plan.get("sql", ""))
+    try:
+        executed_sql = catalog.prepare_query_sql(sql)
+    except Exception as exc:
+        fail("validation", sql, exc)
+    try:
+        result = catalog.query(spec, executed_sql)
+    except Exception as exc:
+        fail("execution", executed_sql, exc)
     response = {
         "id": uuid.uuid4().hex[:10], "question": question,
-        "summary": summarize(question, result, plan.get("summary_hint"), payload),
-        "title": plan.get("title", "Resultado"), "sql": sql,
+        "summary": summarize(question, result, plan.get("summary_hint"), {**payload, "model_language": language}),
+        "title": plan.get("title", "Resultado"), "sql": executed_sql,
         "columns": result["columns"], "rows": result["rows"],
         "chart": choose_chart(plan.get("chart", "auto"), result),
         "map": detect_map(result),
@@ -347,9 +410,9 @@ def ask():
             "trino": "Trino SQL", "postgresql": "PostgreSQL", "sqlite": "SQLite",
         }.get(spec["engine"], spec["engine"])
         system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
-Use only read-only {dialect}. Use only the supplied schema. Always include LIMIT 500 or less.
+Use only read-only {dialect}. Use only the supplied schema. For SELECT/WITH, include LIMIT 500 or less. Never add LIMIT to SHOW, DESCRIBE or EXPLAIN.
 chart must be one of auto, bar, stacked_bar, line, multi_line, donut, none.
-Never invent columns. Language for title and summary: {payload.get('model_language', 'es')}.
+Never invent columns. Language for title and summary: {MODEL_LANGUAGES[response_language(payload)]}.
 Schema/profile: {json.dumps(profiles, ensure_ascii=False)}
 Editable context and user preferences (honor them unless they conflict with safety or the schema):
 {additional_context or '(none)'}"""
@@ -377,7 +440,7 @@ Editable context and user preferences (honor them unless they conflict with safe
 
 def demo_plan(question: str):
     q = question.lower()
-    if any(word in q for word in ("apilad", "stacked")):
+    if any(word in q for word in ("apilad", "stacked", "pilat", "empil", "gestapel", "impilat")):
         return {
             "sql": "SELECT substr(sale_date, 1, 7) AS month, "
                    "SUM(CASE WHEN category = 'Electrónica' THEN revenue ELSE 0 END) AS electronics, "
@@ -386,9 +449,9 @@ def demo_plan(question: str):
                    "FROM sales GROUP BY substr(sale_date, 1, 7) ORDER BY month",
             "title": "Ingresos mensuales por categoría", "chart": "stacked_bar",
         }
-    if any(word in q for word in ("ciudad", "mapa", "tienda", "store")):
+    if any(word in q for word in ("ciudad", "ciutat", "cidade", "city", "ville", "città", "stadt", "hiria", "mapa", "map", "carte", "karte", "tienda", "tenda", "botiga", "denda", "store", "magasin", "negozio", "filiale")):
         return {"sql": "SELECT s.store_name, s.city, s.country, s.latitude, s.longitude, ROUND(SUM(sa.revenue), 2) AS revenue FROM stores s JOIN sales sa ON s.store_id = sa.store_id GROUP BY s.store_id, s.store_name, s.city, s.country, s.latitude, s.longitude ORDER BY revenue DESC", "title": "Ingresos por tienda", "chart": "bar"}
-    if any(word in q for word in ("categor", "producto", "donut", "toro")):
+    if any(word in q for word in ("categor", "kategor", "produkt", "producto", "produto", "produit", "product", "prodotto", "donut", "toro")):
         return {"sql": "SELECT category, ROUND(SUM(revenue), 2) AS revenue, SUM(units) AS units FROM sales GROUP BY category ORDER BY revenue DESC", "title": "Rendimiento por categoría", "chart": "donut"}
     return {"sql": "SELECT substr(sale_date, 1, 7) AS month, ROUND(SUM(revenue), 2) AS revenue, SUM(units) AS units FROM sales GROUP BY substr(sale_date, 1, 7) ORDER BY month", "title": "Evolución mensual", "chart": "line"}
 
@@ -398,6 +461,9 @@ def summarize(question, result, hint, payload):
     language = payload.get("model_language", "es")
     phrases = {
         "es": ("La consulta no devolvió resultados para los filtros solicitados.", "He encontrado", "resultados", "El primer registro incluye un valor principal de"),
+        "ca": ("La consulta no ha retornat resultats per als filtres indicats.", "He trobat", "resultats", "El primer registre inclou un valor principal de"),
+        "eu": ("Kontsultak ez du emaitzarik itzuli hautatutako iragazkiekin.", "Aurkitu ditut", "emaitza", "Lehen erregistroko balio nagusia"),
+        "gl": ("A consulta non devolveu resultados para os filtros indicados.", "Atopei", "resultados", "O primeiro rexistro inclúe un valor principal de"),
         "en": ("The query returned no results for these filters.", "I found", "results", "The first row has a main value of"),
         "it": ("La query non ha restituito risultati per questi filtri.", "Ho trovato", "risultati", "La prima riga ha un valore principale di"),
         "de": ("Die Abfrage lieferte für diese Filter keine Ergebnisse.", "Ich habe", "Ergebnisse gefunden", "Der erste Datensatz hat einen Hauptwert von"),

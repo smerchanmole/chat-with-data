@@ -1,111 +1,187 @@
 # Talk to Data
 
-Aplicación web Flask para conversar con datos mediante un modelo LLM. Descubre esquemas y tablas, genera un perfil compacto para el modelo, convierte preguntas a SQL de solo lectura y presenta la respuesta como resumen, tabla, mapa, gráfica y consulta reutilizable.
+**Pregunta a tus datos en lenguaje natural y conserva siempre la consulta que produjo la respuesta.** Aplicación Flask para Cloudera Machine Learning y ejecución local: conecta una fuente SQL, selecciona tablas, prueba un modelo y empieza a conversar.
 
-## Puesta en marcha
+![Pantalla inicial de Talk to Data en modo oscuro](docs/screenshots/inicio.png)
+
+La interfaz combina historial de chats, perfiles de columnas y cinco módulos de respuesta: **resumen, tabla, gráfica, mapa y SQL copiable**. Incluye dictado por micrófono, modo claro/oscuro y ocho idiomas. Las capturas de esta guía usan solo la fuente y el modelo de demostración: no contienen credenciales ni datos privados.
+
+> **Importante:** la IA puede equivocarse. Comprueba el SQL y los resultados antes de utilizarlos para decisiones operativas.
+
+## Contenido
+
+1. [Inicio rápido](#inicio-rápido)
+2. [Cómo funciona](#cómo-funciona)
+3. [Fuentes de datos](#fuentes-de-datos)
+4. [Modelo LLM](#modelo-llm)
+5. [Chats, respuestas e idiomas](#chats-respuestas-e-idiomas)
+6. [Diagnóstico de errores](#diagnóstico-de-errores)
+7. [Seguridad y persistencia](#seguridad-y-persistencia)
+8. [Pruebas y estructura](#pruebas-y-estructura)
+
+## Inicio rápido
+
+El único fichero que hay que indicar como entrada de una aplicación CML es **`app.py`**. El propio Python detecta e instala mediante `pip` las dependencias ausentes antes de importar Flask; no hay que ejecutar ningún `.sh`.
+
+En local:
 
 ```bash
+git clone https://github.com/smerchanmole/chat-with-data.git
+cd chat-with-data
 python3 -m venv .venv
 source .venv/bin/activate
-export FLASK_SECRET_KEY="cambia-esta-clave"
+export FLASK_SECRET_KEY="una-clave-larga-y-aleatoria"
 python app.py
 ```
 
-`app.py` detecta e instala mediante `pip` las dependencias que falten antes de importar Flask. Cuando se ejecuta localmente, abre `http://127.0.0.1:8091`. La aplicación arranca con una conexión y un modelo de demostración; para usarlos, crea un chat y selecciona ambos.
+Abre **http://127.0.0.1:8091/** y pulsa **Nuevo chat**. La conexión `Demo · Retail analytics` y el modelo local de demostración ya están disponibles para explorar la interfaz sin servicios externos.
 
-La resolución de recursos funciona tanto en la ejecución Python convencional como en el motor de aplicaciones de CML, donde `__file__` puede no estar definido. En ese caso se utiliza el directorio de trabajo del proyecto.
+![Diálogo para elegir la conexión y el modelo de un chat](docs/screenshots/nuevo-chat.png)
 
-### Puertos locales y Cloudera CML
+### Dirección y puerto
 
-El servidor siempre enlaza exclusivamente con `127.0.0.1`:
+La aplicación abre **un solo listener** en `127.0.0.1`:
 
-- En CML usa `CDSW_APP_PORT` como primera opción.
-- Si `CDSW_APP_PORT` no existe, utiliza `CDSW_READONLY_PORT` como alternativa.
-- En local, cuando ninguna de esas variables existe, utiliza el puerto fijo `8091`.
-- Siempre se inicia un único listener.
+| Entorno | Puerto elegido |
+| --- | --- |
+| Cloudera CML | `CDSW_APP_PORT`; si no existe, `CDSW_READONLY_PORT` |
+| Local, sin variables `CDSW_*` | `8091` |
 
-No es necesario definir una variable `PORT` ni utilizar un script de shell entre ambos entornos. En una aplicación de Cloudera basta con indicar `app.py` como fichero de ejecución.
+En CML puede ejecutarse desde su motor de aplicaciones o un notebook: la resolución del directorio de recursos no depende de que exista `__file__`.
 
-## Flujo de trabajo
+## Cómo funciona
 
-En el lateral izquierdo puedes crear **chats**, **conexiones** y **modelos**. La conexión se prueba antes de guardarla: eliges la base o esquema y entre 1 y 12 tablas, y la app calcula su perfil. El modelo debe responder a una petición de prueba antes de poder guardarse. Al crear un chat, seleccionas una conexión y un modelo guardados. El chat empieza con un análisis preliminar del perfil y mantiene su propio historial, sin mezclar preguntas de otros chats.
+![Infografía: chat, perfil, LLM, validación, motor y respuesta](docs/arquitectura.svg)
 
-Los chats, conexiones y modelos se guardan en `runtime/workspace.db` y se recuperan tras reiniciar la aplicación, asociados por sus identificadores originales. Cada chat conserva el análisis preliminar, las instrucciones adicionales y todas sus preguntas, respuestas, resultados, gráficas y SQL. La barra izquierda muestra primero los chats más recientes y permite saltar entre ellos. Se recuerda el chat abierto en el navegador. Los chats cuyo modelo o conexión se elimine conservan su historial para consulta, pero ya no aceptan nuevas preguntas.
+1. **Prueba la conexión:** descubre bases, elige una y selecciona entre 1 y 12 tablas.
+2. **Perfila los datos:** toma hasta 100 filas por tabla para describir columnas, tipos, valores de ejemplo y cardinalidad de la muestra.
+3. **Prueba el modelo:** una petición real comprueba endpoint, credenciales y Model ID antes de guardarlo.
+4. **Crea un chat:** queda ligado al identificador de esa conexión y ese modelo y empieza con un análisis preliminar.
+5. **Pregunta:** el modelo recibe perfil, instrucciones y hasta seis interacciones recientes. Propone SQL de solo lectura; el servidor lo valida y limita antes de enviarlo al motor.
+6. **Explora:** cambia entre tabla, gráfica, mapa (si hay coordenadas) y SQL resaltado y copiable.
 
-Las configuraciones, credenciales, perfiles, SQL y resultados se cifran antes de escribirse en SQLite; la clave local está en `runtime/workspace.key`. La cookie firmada usa `FLASK_SECRET_KEY` o, si no se configura, una clave local estable en `runtime/session.key`. Conserva estos ficheros al actualizar o mover la aplicación y protege el directorio `runtime`; **no los subas al repositorio**. El acceso al historial queda ligado a la cookie de ese navegador (duración máxima de un año); borrar cookies o cambiar de navegador exige un mecanismo de autenticación/transferencia que esta versión aún no ofrece. Los tokens pueden caducar y requerir una nueva configuración. No hay sincronización entre usuarios o dispositivos.
+![Infografía del ciclo de vida y la vinculación de cada chat](docs/ciclo-chat.svg)
 
 ## Fuentes de datos
 
-La sección **Conexiones** ofrece tres conectores explícitos. En todos ellos, **Probar y descubrir bases** valida el acceso y completa el selector de bases/esquemas antes de descubrir las tablas.
+Abre **Conexiones → Nueva conexión**. **Probar y descubrir bases** valida el acceso; después eliges base/esquema, tablas y **Guardar y analizar tablas**. Una conexión nueva no cambia los chats ya vinculados a otra.
 
-### PostgreSQL
+![Formulario de conexión Cloudera en el tema claro y en catalán](docs/screenshots/conexiones.png)
 
-Solicita URL del servidor, base de datos inicial, usuario y contraseña. Admite URLs `postgresql://...` y `jdbc:postgresql://...`; puede añadirse `?sslmode=require`. La base inicial se usa para consultar las demás bases accesibles y las tablas se muestran calificadas como `esquema.tabla`.
+### Cloudera: Impala o Hive
 
-### Cloudera: Impala y Hive
-
-La aplicación usa el patrón de Cloudera Machine Learning:
+Indica el **nombre registrado en CML** (el mismo del widget de conexiones), motor **Impala** o **Hive**, usuario y **Workload Password**. No hace falta una API Key ni enumerar automáticamente las conexiones del usuario. Se usa `cml.data_v1`:
 
 ```python
 import cml.data_v1 as cmldata
 
-conn = cmldata.get_connection("vast-data-demo", {"USERNAME": "usuario", "PASSWORD": "workload-password"})
-dataframe = conn.get_pandas_dataframe("SHOW DATABASES")
-conn.close()
+conn = cmldata.get_connection(
+    "vast-data-demo",
+    {"USERNAME": "usuario", "PASSWORD": "workload-password"},
+)
+try:
+    databases = conn.get_pandas_dataframe("SHOW DATABASES")
+finally:
+    conn.close()
 ```
 
-En **Conexiones → Nueva conexión → Cloudera**, escribe el nombre exacto de la conexión que aparece en el widget de CML, por ejemplo `vast-data-demo`, el usuario y su **Workload Password**. La app llama a `cmldata.get_connection(nombre, {"USERNAME": usuario, "PASSWORD": workload_password})` y ejecuta `SHOW DATABASES`; no utiliza API Key ni necesita una API para enumerar conexiones.
+La conexión se abre para cada consulta y se cierra al terminar. El motor seleccionado determina si el prompt pide **Impala SQL** o **HiveQL**. A `SHOW`, `DESCRIBE` y `EXPLAIN` no se les añade un `LIMIT` sintácticamente inválido: las filas se limitan en la respuesta.
 
-### Trino mediante JDBC URL
+### PostgreSQL
 
-También se puede configurar directamente desde la interfaz con:
+Rellena URL, base inicial, usuario y contraseña. Se aceptan `postgresql://…` y `jdbc:postgresql://…`, por ejemplo `postgresql://servidor:5432?sslmode=require`. Se descubren las bases accesibles y las tablas aparecen como `esquema.tabla`.
+
+### Trino
+
+Pega la URL JDBC de tu virtual warehouse:
 
 ```text
 jdbc:trino://virtual-warehouse.environment.dwx.company.com:443/catalog/schema
 ```
 
-La URL se traduce al cliente Python de Trino. Si no incluye catálogo o esquema, el asistente descubre primero los catálogos y sus esquemas. Se admite autenticación básica opcional; los valores se almacenan cifrados en el servidor.
-
-## Apariencia
-
-En **Preferencias → Apariencia** se puede alternar entre tema oscuro y claro. La preferencia se conserva localmente en el navegador; las credenciales se almacenan cifradas en el servidor.
-
-El lateral derecho muestra las columnas perfiladas de cada tabla, incluidos tipo y cardinalidad de la muestra. Las tablas de resultados incluyen número de fila. Las gráficas utilizan todas las filas devueltas por la consulta, agrupan pares categoría/serie repetidos y ofrecen desplazamiento horizontal cuando hay muchos puntos; muestran ejes, escalas, etiquetas y series múltiples, con eje secundario cuando las escalas difieren mucho. Hay barras agrupadas o apiladas y líneas múltiples. Los resultados geográficos se representan sobre un mapa Leaflet con cartografía de OpenStreetMap.
+La app la traduce al cliente Python de Trino. Si faltan catálogo o esquema, descubre primero los catálogos y sus esquemas. Admite usuario y autenticación básica opcional.
 
 ## Modelo LLM
 
-Configura un endpoint compatible con `/chat/completions`, el identificador del modelo y uno de estos métodos:
+En **Modelos → Nuevo modelo**, pon un nombre, el endpoint y las credenciales; pulsa **Probar modelo** y, solo si responde, **Guardar modelo probado**.
 
-- CDP token: cabecera `Authorization: Bearer …`
-- JWT token: cabecera `Authorization: Bearer …`
-- API Key ID + value: cabeceras `X-API-Key-ID` y `X-API-Key`
+| Autenticación | Cabecera enviada |
+| --- | --- |
+| CDP token | `Authorization: Bearer …` |
+| JWT token | `Authorization: Bearer …` |
+| API Key ID + Value | `X-API-Key-ID` y `X-API-Key` |
 
-Puedes pegar tanto la raíz del Model Endpoint de Cloudera como la URL completa terminada en `/v1/chat/completions`. Si dejas **Model ID** vacío, la aplicación consulta `/v1/models` y utiliza el identificador publicado por NIM, por ejemplo `nvidia/nemotron-3-nano`. No se utiliza el valor genérico `default`.
+Puedes pegar la raíz del endpoint de Cloudera o la URL completa terminada en `/v1/chat/completions`. El **Model ID** es el nombre publicado por el servidor, no necesariamente el nombre del endpoint; por ejemplo `nvidia/nemotron-3-nano`. Si queda vacío, la app intenta obtenerlo de `/v1/models`. Una llamada válida tiene esta forma:
 
-El prompt contiene solo los perfiles de las tablas seleccionadas en ese chat y sus seis interacciones más recientes. El SQL se valida de nuevo en el servidor y se limita a 500 filas antes de ejecutarse.
+```text
+POST https://…/namespaces/serving-default/endpoints/mi-endpoint/v1/chat/completions
+Authorization: Bearer <CDP_TOKEN>
+Content-Type: application/json
 
-## Seguridad y comportamiento
+{"model":"nvidia/nemotron-3-nano","messages":[{"role":"user","content":"Hola"}]}
+```
 
-- Solo se aceptan sentencias de lectura (`SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`).
-- Se bloquean sentencias múltiples y operaciones de escritura o administración.
-- Las conexiones se cierran después de cada consulta.
-- El perfilado usa como máximo 100 filas y 12 tablas.
-- Cada navegador conserva sus chats, conexiones y modelos por medio de una cookie firmada; el historial no tiene un límite artificial de 30 respuestas.
-- Los secretos del modelo, PostgreSQL, Trino y Cloudera, así como el historial, se guardan cifrados en `runtime/workspace.db`, nunca en cookies ni `localStorage`. La clave de descifrado local no se incluye en Git.
+Si aparece un `404`, revisa tanto la URL como el **Model ID** anunciado por el endpoint.
 
-## Pruebas
+## Chats, respuestas e idiomas
+
+La lista izquierda permite cambiar de chat y consultar de nuevo **preguntas, respuestas, resultados, gráficas y SQL**. Cada conversación conserva su conexión, su modelo y sus instrucciones. Si se elimina una conexión o modelo, el historial sigue legible, pero ese chat deja de aceptar preguntas nuevas.
+
+![Conversación demo con gráfica de dos ejes](docs/screenshots/conversacion.png)
+
+En **Preferencias** eliges los módulos: resumen, tabla, gráfica, mapa y SQL. Las tablas incluyen número de fila. Las gráficas usan todas las filas devueltas (hasta el límite de consulta), agrupan categoría/serie, admiten barras agrupadas o apiladas, líneas, varias series y eje secundario cuando las escalas difieren. El mapa usa Leaflet y OpenStreetMap si hay latitud y longitud; la cartografía requiere acceso a esos recursos externos.
+
+El panel derecho muestra columnas perfiladas e instrucciones exclusivas del chat, por ejemplo «responde con puntos» o «trata `sale_date` como fecha». El micrófono utiliza el reconocimiento de voz disponible en el navegador; si no lo está, se puede escribir normalmente.
+
+### Idiomas y apariencia
+
+El selector de la **esquina superior derecha** cambia inmediatamente el idioma de la interfaz y de las nuevas respuestas. Están disponibles **Español, Català, Euskara, Galego, English, Français, Italiano y Deutsch**. En **Preferencias** puedes elegir por separado idioma de interfaz y respuestas, tema **claro** u **oscuro** y módulos. Las elecciones se recuerdan en el navegador; el dictado usa el idioma de la interfaz.
+
+![La misma conversación en tema claro e interfaz catalana](docs/screenshots/conversacion-clara-ca.png)
+
+Los mensajes y análisis **ya generados** permanecen como se guardaron: cambiar el selector no reescribe el historial ni traduce datos, columnas, SQL o errores originales de la base. Los nuevos análisis y respuestas se solicitan en el idioma elegido.
+
+## Diagnóstico de errores
+
+Si una pregunta falla, la pregunta y su error quedan en el historial. La tarjeta distingue tres etapas:
+
+| Etapa | Qué significa | Qué comprobar |
+| --- | --- | --- |
+| **Generación de SQL** | Falló el modelo o su respuesta JSON | Endpoint, Model ID, token, disponibilidad |
+| **Validación de SQL** | La propuesta incumple reglas de solo lectura o sintaxis admitida | Pregunta, instrucciones, SQL propuesto |
+| **Ejecución de SQL** | La base rechazó o no completó la consulta | Dialecto, tablas, columnas, permisos, tipos |
+
+Junto al error aparece la **causa original del conector** —por ejemplo, un `AnalysisException` de Impala— y, si hubo SQL, la **sentencia exacta intentada**, resaltada y copiable. Así puedes reproducirla fuera de la app. Las credenciales guardadas se ocultan de las causas y del SQL mostrado.
+
+Si Impala falla más que PostgreSQL, comprueba el motor seleccionado, la base y la tabla, y si las funciones SQL generadas existen en ese dialecto. La causa y la sentencia ayudan a separar sintaxis de permisos o conectividad.
+
+## Seguridad y persistencia
+
+- Se aceptan consultas de lectura (`SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`); se rechazan comentarios, sentencias múltiples y operaciones de escritura o administración.
+- `SELECT`/`WITH` tienen un máximo de **500 filas** en el SQL enviado al motor. Las consultas de metadatos se recortan en la respuesta para no insertarles un `LIMIT` incompatible.
+- El perfilado se limita a **100 filas por tabla** y **12 tablas por conexión**.
+- Chats, conexiones, modelos, perfiles, credenciales, resultados y errores se guardan cifrados en `runtime/workspace.db` con `runtime/workspace.key`.
+- La cookie firmada usa `FLASK_SECRET_KEY` o una clave local persistida en `runtime/session.key`. No guarda credenciales; identifica el espacio de trabajo de ese navegador y caduca tras un año.
+- **Conserva y protege `runtime/`** al actualizar o mover la app. Está excluido de Git. Sin su clave no podrán descifrarse los datos. Borrar cookies o cambiar de navegador no transfiere el historial: todavía no hay cuentas ni sincronización entre dispositivos.
+- Los tokens externos pueden caducar. Para producción, establece `FLASK_SECRET_KEY` y controla acceso al proceso, archivos y red.
+
+## Pruebas y estructura
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
+node --test tests/test_charts.js tests/test_locales.js
 ```
 
-Las pruebas cubren catálogo, perfilado, aislamiento y restauración de chats, cifrado de recursos e historial, prueba obligatoria de modelos, validación de conexiones, límite de filas y bloqueo de SQL destructivo. La representación completa de gráficas puede comprobarse adicionalmente con `node --test tests/test_charts.js`.
+Las pruebas cubren conexiones, perfilado, aislamiento de chats, cifrado, prueba de modelos, SQL de solo lectura, límites, errores con causa y SQL, gráficas e integridad de traducciones.
 
-## Estructura
+| Ruta | Responsabilidad |
+| --- | --- |
+| `app.py` | Arranque autocontenido, API Flask, sesiones y flujo pregunta → SQL → respuesta |
+| `data_connector.py` | Cloudera, PostgreSQL, Trino y demo |
+| `llm_client.py` | Endpoint compatible con chat/completions y autenticación |
+| `workspace_store.py` | Historial cifrado y asociación fija de chat, conexión y modelo |
+| `templates/index.html` | Estructura de la interfaz |
+| `static/app.js`, `static/i18n.js`, `static/style.css` | Interacción, ocho idiomas, visualizaciones y estilo cristal |
+| `scripts/capture_screenshots.mjs` | Capturas reproducibles de la demo (Chrome local en macOS) |
 
-- `app.py`: API Flask, sesión y orquestación pregunta → SQL → datos.
-- `data_connector.py`: adaptadores CML, Trino directo y SQLite demo.
-- `llm_client.py`: cliente OpenAI-compatible y métodos de autenticación.
-- `workspace_store.py`: conexiones y modelos probados, chats aislados y análisis preliminar.
-- `templates/index.html`: navegación de chats, conexiones, modelos y preferencias.
-- `static/`: diseño cristal, interacción, voz y visualizaciones sin dependencias de frontend.
+Para regenerar las capturas, inicia `python app.py` y ejecuta `node scripts/capture_screenshots.mjs` en macOS con Google Chrome instalado. El script abre un perfil temporal y usa solo la demo.

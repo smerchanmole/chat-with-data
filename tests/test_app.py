@@ -53,11 +53,36 @@ class TalkToDataTests(unittest.TestCase):
         self.assertIn("medidas: revenue, units", first["overview"])
         english = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo", "model_language": "en"}).get_json()["data"]
         self.assertIn("Preliminary analysis", english["overview"])
+        for language, phrase in (("ca", "Anàlisi preliminar"), ("eu", "Aurretiazko analisia"), ("gl", "Análise preliminar")):
+            localized = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo", "model_language": language}).get_json()["data"]
+            self.assertIn(phrase, localized["overview"])
         response = self.client.post(f"/api/workspace/chats/{first['id']}/ask", json={"question": "Ingresos por mes"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(self.client.get(f"/api/workspace/chats/{first['id']}").get_json()["data"]["messages"]), 1)
         self.assertEqual(self.client.get(f"/api/workspace/chats/{second['id']}").get_json()["data"]["messages"], [])
         self.assertEqual(self.client.post("/api/workspace/chats", json={"connection_id": "missing", "model_id": "demo"}).status_code, 400)
+
+    def test_query_error_shows_connector_cause_and_exact_attempted_sql(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        with patch.object(catalog, "query", side_effect=RuntimeError("AnalysisException: unknown column revenue_bad")):
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Ingresos por mes"})
+        self.assertEqual(response.status_code, 422)
+        error = response.get_json()
+        self.assertEqual(error["stage"], "execution")
+        self.assertIn("AnalysisException", error["cause"])
+        self.assertIn("LIMIT 500", error["sql"])
+        saved = self.client.get(f"/api/workspace/chats/{chat['id']}").get_json()["data"]["messages"]
+        self.assertEqual(saved[0]["kind"], "error")
+        self.assertEqual(saved[0]["sql"], error["sql"])
+
+    def test_sql_validation_error_is_distinct_from_execution(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        with patch("app.demo_plan", return_value={"sql": "DELETE FROM sales", "title": "Bad", "chart": "none"}):
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Borrar ventas"})
+        self.assertEqual(response.status_code, 422)
+        error = response.get_json()
+        self.assertEqual(error["stage"], "validation")
+        self.assertIn("DELETE FROM sales", error["sql"])
 
     def test_connection_is_saved_only_after_discovery_and_profile(self):
         spec = {"engine": "cloudera", "name": "vast-data-demo", "username": "analyst", "workload_password": "secret"}
@@ -154,6 +179,11 @@ class TalkToDataTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             catalog.query(spec, "SELECT * FROM sales -- LIMIT 1")
 
+    def test_metadata_sql_is_not_given_an_invalid_limit(self):
+        self.assertEqual(catalog.prepare_query_sql("SHOW DATABASES"), "SHOW DATABASES")
+        self.assertEqual(catalog.prepare_query_sql("DESCRIBE analytics.sales;"), "DESCRIBE analytics.sales")
+        self.assertEqual(catalog.prepare_query_sql("EXPLAIN SELECT * FROM sales"), "EXPLAIN SELECT * FROM sales")
+
     def test_demo_stacked_chart_returns_multiple_measures(self):
         chat = self.client.post("/api/workspace/chats", json={"connection_id":"demo", "model_id":"demo"}).get_json()["data"]
         response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question":"Muéstrame barras apiladas por mes"}).get_json()["data"]
@@ -220,6 +250,18 @@ class TalkToDataTests(unittest.TestCase):
         data_v1.get_connection.assert_called_once_with(
             "vast-data-demo", {"USERNAME": "data-user", "PASSWORD": "workload-secret"},
         )
+        connection.close.assert_called_once()
+
+    def test_impala_failure_preserves_engine_message_and_closes_connection(self):
+        connection = Mock()
+        connection.get_pandas_dataframe.side_effect = RuntimeError("AnalysisException: Column not found: bad_name")
+        data_v1 = ModuleType("cml.data_v1")
+        data_v1.get_connection = Mock(return_value=connection)
+        cml_package = ModuleType("cml")
+        cml_package.data_v1 = data_v1
+        with patch.dict(sys.modules, {"cml": cml_package, "cml.data_v1": data_v1}):
+            with self.assertRaisesRegex(RuntimeError, "Impala \\(vast-data-demo\\): AnalysisException"):
+                catalog._cml_query({"name": "vast-data-demo", "username": "user", "workload_password": "secret", "dialect": "impala"}, "SELECT bad_name FROM sales LIMIT 500")
         connection.close.assert_called_once()
 
     def test_postgresql_parameters_and_database_discovery(self):

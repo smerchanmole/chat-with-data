@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Arquitectura de Talk to Data</title>
+  <desc id="desc">Una pregunta pasa por el chat y el perfil de tablas, el modelo propone SQL, el servidor lo valida y ejecuta en el motor elegido, y devuelve una respuesta visual.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#07111f"/><stop offset="1" stop-color="#16233d"/></linearGradient>
+    <linearGradient id="accent" x2="1"><stop stop-color="#ff8a50"/><stop offset="1" stop-color="#ffb77d"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-opacity=".3"/></filter>
+  </defs>
+  <rect width="1200" height="420" rx="30" fill="url(#bg)"/>
+  <circle cx="1080" cy="40" r="200" fill="#ff8a50" opacity=".045"/><circle cx="90" cy="400" r="180" fill="#4cbad1" opacity=".05"/>
+  <text x="48" y="62" fill="#ff9a64" font-family="Inter,Arial,sans-serif" font-size="15" font-weight="800" letter-spacing="3">DE LA PREGUNTA A UNA RESPUESTA TRAZABLE</text>
+  <text x="48" y="101" fill="white" font-family="Inter,Arial,sans-serif" font-size="27" font-weight="800">El modelo propone. La aplicación comprueba y consulta.</text>
+  <g font-family="Inter,Arial,sans-serif" filter="url(#shadow)">
+    <rect x="45" y="150" width="192" height="175" rx="22" fill="#1b2a40" stroke="#33445e"/>
+    <text x="66" y="189" fill="#ff9a64" font-size="31">01</text><text x="66" y="225" fill="white" font-size="19" font-weight="700">Usuario y chat</text><text x="66" y="254" fill="#b7c4d8" font-size="13">Pregunta + idioma</text><text x="66" y="276" fill="#b7c4d8" font-size="13">+ contexto propio</text>
+    <rect x="278" y="150" width="192" height="175" rx="22" fill="#1b2a40" stroke="#33445e"/>
+    <text x="299" y="189" fill="#ff9a64" font-size="31">02</text><text x="299" y="225" fill="white" font-size="19" font-weight="700">Perfil + LLM</text><text x="299" y="254" fill="#b7c4d8" font-size="13">Tablas seleccionadas</text><text x="299" y="276" fill="#b7c4d8" font-size="13">→ propuesta SQL</text>
+    <rect x="511" y="150" width="192" height="175" rx="22" fill="#1b2a40" stroke="#33445e"/>
+    <text x="532" y="189" fill="#ff9a64" font-size="31">03</text><text x="532" y="225" fill="white" font-size="19" font-weight="700">Validación</text><text x="532" y="254" fill="#b7c4d8" font-size="13">Solo lectura y límite</text><text x="532" y="276" fill="#b7c4d8" font-size="13">de 500 filas</text>
+    <rect x="744" y="150" width="192" height="175" rx="22" fill="#1b2a40" stroke="#33445e"/>
+    <text x="765" y="189" fill="#ff9a64" font-size="31">04</text><text x="765" y="225" fill="white" font-size="19" font-weight="700">Motor SQL</text><text x="765" y="254" fill="#b7c4d8" font-size="13">Impala · Hive · Trino</text><text x="765" y="276" fill="#b7c4d8" font-size="13">PostgreSQL · demo</text>
+    <rect x="977" y="150" width="178" height="175" rx="22" fill="#1b2a40" stroke="#ff8a50"/>
+    <text x="998" y="189" fill="#ff9a64" font-size="31">05</text><text x="998" y="225" fill="white" font-size="19" font-weight="700">Respuesta</text><text x="998" y="254" fill="#b7c4d8" font-size="13">Resumen · tabla</text><text x="998" y="276" fill="#b7c4d8" font-size="13">gráfica · mapa · SQL</text>
+  </g>
+  <g fill="url(#accent)"><path d="m244 230 13 8-13 8z"/><path d="m477 230 13 8-13 8z"/><path d="m710 230 13 8-13 8z"/><path d="m943 230 13 8-13 8z"/></g>
+  <path d="M52 358h1096" stroke="#3d506c"/><text x="53" y="388" fill="#b7c4d8" font-family="Inter,Arial,sans-serif" font-size="14">Si falla, se guarda la etapa, la causa original del conector y la sentencia SQL intentada.</text>
+</svg>

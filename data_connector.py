@@ -106,32 +106,39 @@ class DataCatalog:
         return profiles
 
     def query(self, spec: dict[str, Any], sql: str, limit: int = 500) -> dict[str, Any]:
-        self._assert_read_only(sql)
+        bounded = self.prepare_query_sql(sql, limit)
+        if spec.get("demo") or spec.get("engine") == "sqlite":
+            with sqlite3.connect(self.demo_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(bounded)
+                rows = [dict(row) for row in cursor.fetchmany(limit + 1)]
+                columns = [item[0] for item in cursor.description or []]
+            return {"columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit}
+        if spec.get("engine") == "postgresql":
+            result = self._postgres_rows(spec, spec.get("active_database") or spec["database"], bounded)
+            columns = result["columns"]
+            rows = [dict(zip(columns, (self._json_value(value) for value in row))) for row in result["rows"][:limit]]
+            return {"columns": columns, "rows": rows, "truncated": len(rows) >= limit}
+        if spec.get("jdbc_url"):
+            result = self._trino_rows(spec, bounded)
+            return {"columns": result["columns"], "rows": [dict(zip(result["columns"], row)) for row in result["rows"][:limit]], "truncated": len(result["rows"]) >= limit}
+        frame = self._cml_query(spec, bounded)
+        frame = frame.where(frame.notna(), None)
+        return {"columns": list(frame.columns), "rows": frame.head(limit).to_dict(orient="records"), "truncated": len(frame) >= limit}
+
+    @classmethod
+    def prepare_query_sql(cls, sql: str, limit: int = 500) -> str:
+        cls._assert_read_only(sql)
         bounded = sql.strip().rstrip(";")
+        if not re.match(r"^(select|with)\b", bounded, re.I):
+            return bounded
         trailing_limit = re.search(r"\blimit\s+(\d+)(\s+offset\s+\d+)?\s*$", bounded, re.I)
         if trailing_limit:
             if int(trailing_limit.group(1)) > limit:
                 bounded = bounded[:trailing_limit.start(1)] + str(limit) + bounded[trailing_limit.end(1):]
         else:
             bounded = f"{bounded} LIMIT {int(limit)}"
-        if spec.get("demo") or spec.get("engine") == "sqlite":
-            with sqlite3.connect(self.demo_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute(bounded)
-                rows = [dict(row) for row in cursor.fetchall()]
-                columns = [item[0] for item in cursor.description or []]
-            return {"columns": columns, "rows": rows, "truncated": len(rows) >= limit}
-        if spec.get("engine") == "postgresql":
-            result = self._postgres_rows(spec, spec.get("active_database") or spec["database"], bounded)
-            columns = result["columns"]
-            rows = [dict(zip(columns, (self._json_value(value) for value in row))) for row in result["rows"]]
-            return {"columns": columns, "rows": rows, "truncated": len(rows) >= limit}
-        if spec.get("jdbc_url"):
-            result = self._trino_rows(spec, bounded)
-            return {"columns": result["columns"], "rows": [dict(zip(result["columns"], row)) for row in result["rows"]], "truncated": len(result["rows"]) >= limit}
-        frame = self._cml_query(spec, bounded)
-        frame = frame.where(frame.notna(), None)
-        return {"columns": list(frame.columns), "rows": frame.to_dict(orient="records"), "truncated": len(frame) >= limit}
+        return bounded
 
     @staticmethod
     def _cml_query(spec: dict[str, Any], sql: str):
@@ -146,12 +153,21 @@ class DataCatalog:
         if not credentials["USERNAME"] or not credentials["PASSWORD"]:
             raise ValueError("Indica el usuario y la Workload Password de Cloudera.")
         conn = None
+        query_failed = False
         try:
             conn = cmldata.get_connection(spec["name"], credentials)
             return conn.get_pandas_dataframe(sql)
+        except Exception as exc:
+            query_failed = True
+            dialect = "Hive" if spec.get("dialect") == "hive" else "Impala"
+            raise RuntimeError(f"{dialect} ({spec['name']}): {str(exc).strip() or type(exc).__name__}") from exc
         finally:
             if conn is not None:
-                conn.close()
+                try:
+                    conn.close()
+                except Exception:
+                    if not query_failed:
+                        raise
 
     @staticmethod
     def _trino_rows(spec: dict[str, Any], sql: str) -> dict[str, Any]:

@@ -1,13 +1,15 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const languages = ['es','ca','eu','gl','en','fr','it','de'];
+const validLanguage = code => languages.includes(code) ? code : 'es';
 const state = {
   workspace: { connections: [], models: [], chats: [] },
   chatId: localStorage.getItem('ttd-chat-id') || '',
   view: 'chat', connectionTicket: '', modelTicket: '', pendingConnection: 0, pendingTables: 0, pendingModel: 0,
   modules: { summary: true, table: true, chart: true, map: true, sql: true },
   uiTheme: localStorage.getItem('ttd-theme') || 'dark',
-  uiLanguage: localStorage.getItem('ttd-language') || 'es',
-  modelLanguage: sessionStorage.getItem('ttd-model-language') || 'es',
+  uiLanguage: validLanguage(localStorage.getItem('ttd-language')),
+  modelLanguage: validLanguage(localStorage.getItem('ttd-model-language') || sessionStorage.getItem('ttd-model-language')),
   chat: null, busy: false
 };
 const translations = {
@@ -86,15 +88,13 @@ const translations = {
     'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
   }
 };
-Object.assign(translations.en, {'filas representadas':'rows represented','posiciones en el eje X':'X-axis positions'});
-Object.assign(translations.it, {'filas representadas':'righe rappresentate','posiciones en el eje X':'posizioni sull’asse X'});
-Object.assign(translations.de, {'filas representadas':'dargestellte Zeilen','posiciones en el eje X':'Positionen auf der X-Achse'});
-Object.assign(translations.fr, {'filas representadas':'lignes représentées','posiciones en el eje X':'positions sur l’axe X'});
+for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {});
 const originalText = new WeakMap();
 function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
+function tf(key, values={}) { return t(key).replace(/\{(\w+)\}/g, (_,name)=>String(values[name]??'')); }
 function translateStatic() {
   const map = translations[state.uiLanguage] || {};
-  const roots = ['.sidebar-actions','.main-nav','.sidebar-foot','.sidebar-lists section > h2','.management-intro','#connection-form','#model-form','#new-chat-dialog','#preferences-dialog','.context-head','#context-empty','#context-active','.disclaimer','.welcome','.crumb','.composer-wrap'];
+  const roots = ['.brand','.sidebar-actions','.main-nav','.sidebar-foot','.sidebar-lists section > h2','.management-intro','#connection-form','#model-form','#new-chat-dialog','#preferences-dialog','.context-head','#context-empty','#context-active','.disclaimer','.welcome','.crumb','.composer-wrap','.top-language'];
   for(const selector of roots) {
     for(const root of $$(selector)) {
       const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
@@ -107,11 +107,23 @@ function translateStatic() {
       }
     }
   }
-  one('question').placeholder=({es:'Pregunta algo sobre tus datos…',en:'Ask about your data…',it:'Chiedi qualcosa sui tuoi dati…',de:'Frage etwas zu deinen Daten…',fr:'Posez une question sur vos données…'})[state.uiLanguage]||'Pregunta algo sobre tus datos…';
-  one('model-context').placeholder=({es:'Ej.: responde siempre en español; trata las fechas como DATE',en:'E.g. always answer in English; treat dates as DATE',it:'Es.: rispondi in italiano; tratta le date come DATE',de:'Z. B. antworte auf Deutsch; behandle Datumswerte als DATE',fr:'Ex. : réponds en français ; traite les dates comme DATE'})[state.uiLanguage];
-  one('context-toggle').setAttribute('aria-label',({es:'Mostrar contexto del chat',en:'Show chat context',it:'Mostra il contesto della chat',de:'Chatkontext anzeigen',fr:'Afficher le contexte du chat'})[state.uiLanguage]);
-  one('open-preferences').setAttribute('aria-label',({es:'Preferencias',en:'Preferences',it:'Preferenze',de:'Einstellungen',fr:'Préférences'})[state.uiLanguage]);
-  one('question').setAttribute('aria-label',({es:'Pregunta',en:'Question',it:'Domanda',de:'Frage',fr:'Question'})[state.uiLanguage]);
+  for (const input of $$('[placeholder]')) {
+    if(!input.dataset.originalPlaceholder)input.dataset.originalPlaceholder=input.getAttribute('placeholder');
+    input.placeholder=t(input.dataset.originalPlaceholder);
+  }
+  for (const element of $$('[aria-label],[title]')) {
+    for (const attribute of ['aria-label','title']) {
+      if(!element.hasAttribute(attribute))continue;
+      const key=attribute==='aria-label'?'originalAriaLabel':'originalTitle';
+      if(!element.dataset[key])element.dataset[key]=element.getAttribute(attribute);
+      element.setAttribute(attribute,t(element.dataset[key]));
+    }
+  }
+  one('question').placeholder=t('Pregunta algo sobre tus datos…');
+  one('model-context').placeholder=t('Ej.: responde siempre en español; trata las fechas como DATE');
+  for (const [id,key] of [['context-toggle','Mostrar contexto del chat'],['context-close','Cerrar contexto'],['open-preferences','Preferencias'],['question','Pregunta'],['mic-button','Dictar pregunta'],['send-button','Enviar pregunta'],['top-language','Idioma de la aplicación y las respuestas']]) one(id).setAttribute('aria-label',t(key));
+  one('mic-button').title=t('Dictar pregunta');
+  one('top-language').value=state.uiLanguage;
   document.documentElement.lang=state.uiLanguage;
 }
 
@@ -119,9 +131,13 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
 }
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers:{'Content-Type':'application/json'}, ...options });
-  const payload = await response.json().catch(() => ({ok:false,error:'Respuesta no válida del servidor.'}));
-  if (!response.ok || !payload.ok) throw new Error(payload.error || 'Error ' + response.status);
+  const response = await fetch(path, { headers:{'Content-Type':'application/json','Accept-Language':state.uiLanguage}, ...options });
+  const payload = await response.json().catch(() => ({ok:false,error:t('Respuesta no válida del servidor.')}));
+  if (!response.ok || !payload.ok) {
+    const error=new Error(t(payload.error || 'Error ' + response.status));
+    error.cause=payload.cause||'';error.sql=payload.sql||'';error.stage=payload.stage||'';
+    throw error;
+  }
   return payload.data;
 }
 function toast(message, error = false) {
@@ -154,11 +170,12 @@ function setView(view) {
   if (view === 'chat') renderContext();
 }
 function listItem(item, kind, secondary, active = false, archived = false) {
-  const label = escapeHtml(item.label || item.title);
+  const title = kind==='chat' && item.title?.endsWith(' · Nuevo chat') ? item.title.slice(0,-'Nuevo chat'.length)+t('Nuevo chat') : item.title;
+  const label = escapeHtml(item.label || title);
   return '<div class="sidebar-record' + (active ? ' selected' : '') + (archived ? ' archived' : '') + '">' +
     '<button type="button" data-open-' + kind + '="' + escapeHtml(item.id) + '" title="' + label + '"' + (active ? ' aria-current="true"' : '') + '>' +
     '<strong>' + label + '</strong><small>' + escapeHtml(secondary) + '</small></button>' +
-    (item.id === 'demo' ? '' : '<button type="button" class="record-delete" data-delete-' + kind + '="' + escapeHtml(item.id) + '" aria-label="Eliminar ' + label + '" title="Eliminar">×</button>') +
+    (item.id === 'demo' ? '' : '<button type="button" class="record-delete" data-delete-' + kind + '="' + escapeHtml(item.id) + '" aria-label="' + escapeHtml(t('Eliminar')+' '+(item.label||item.title)) + '" title="'+escapeHtml(t('Eliminar'))+'">×</button>') +
     '</div>';
 }
 function renderSidebar() {
@@ -167,10 +184,10 @@ function renderSidebar() {
   one('model-count').textContent = state.workspace.models.length;
   one('chat-list').innerHTML = state.workspace.chats.map(item => {
     const connected=!!connectionById(item.connection_id)&&!!modelById(item.model_id);
-    const source=connectionById(item.connection_id)?.label || item.connection_snapshot?.label || 'Conexión no disponible';
+    const source=connectionById(item.connection_id)?.label || item.connection_snapshot?.label || t('Conexión no disponible');
     return listItem(item,'chat',source+' · '+t(connected?'Listo para preguntar':'Solo consulta'),item.id === state.chatId,!connected);
   }).join('') || '<p class="muted-small">'+escapeHtml((translations[state.uiLanguage]||{})['Todavía no hay chats.']||'Todavía no hay chats.')+'</p>';
-  one('connection-list').innerHTML = state.workspace.connections.map(item => listItem(item,'connection',item.database + ' · ' + item.tables.length + ' tablas')).join('');
+  one('connection-list').innerHTML = state.workspace.connections.map(item => listItem(item,'connection',item.database + ' · ' + item.tables.length + ' ' + t('tablas'))).join('');
   one('model-list').innerHTML = state.workspace.models.map(item => listItem(item.id==='demo'?{...item,label:t('Modelo de demostración')}:item,'model',item.model)).join('');
 }
 function renderCatalogs() {
@@ -196,15 +213,15 @@ function renderContext() {
   const item = chatById(state.chatId), liveConnection = item && connectionById(item.connection_id), liveModel = item && modelById(item.model_id);
   const connection = liveConnection || item?.connection_snapshot, model = liveModel || item?.model_snapshot;
   one('context-empty').hidden = !!item; one('context-active').hidden = !item;
-  one('active-badges').innerHTML = item ? '<span class="source-pill">' + escapeHtml(connection?.label || 'Conexión eliminada') + '</span><span class="source-pill">' + escapeHtml(model?.id==='demo'?t('Modelo de demostración'):model?.label || t('Modelo eliminado')) + '</span>' : '';
+  one('active-badges').innerHTML = item ? '<span class="source-pill">' + escapeHtml(connection?.label || t('Conexión no disponible')) + '</span><span class="source-pill">' + escapeHtml(model?.id==='demo'?t('Modelo de demostración'):model?.label || t('Modelo eliminado')) + '</span>' : '';
   one('question').disabled = !item || !liveConnection || !liveModel || state.busy;
-  one('question').placeholder = item && (!liveConnection || !liveModel) ? ({es:'Historial disponible. La conexión o el modelo ya no están disponibles.',en:'History available. The connection or model is no longer available.',it:'Cronologia disponibile. Connessione o modello non più disponibili.',de:'Verlauf verfügbar. Verbindung oder Modell nicht mehr verfügbar.',fr:'Historique disponible. La connexion ou le modèle n’est plus disponible.'}[state.uiLanguage]) : ({es:'Pregunta algo sobre tus datos…',en:'Ask about your data…',it:'Chiedi qualcosa sui tuoi dati…',de:'Frage etwas zu deinen Daten…',fr:'Posez une question sur vos données…'}[state.uiLanguage]);
+  one('question').placeholder = item && (!liveConnection || !liveModel) ? t('Historial disponible. La conexión o el modelo ya no están disponibles.') : t('Pregunta algo sobre tus datos…');
   one('send-button').disabled = one('question').disabled;
   if (!item) return;
-  one('context-connection').textContent = connection?.label || 'Conexión eliminada';
-  one('context-database').textContent = connection?.database || 'No disponible';
+  one('context-connection').textContent = connection?.label || t('Conexión no disponible');
+  one('context-database').textContent = connection?.database || t('No disponible');
   one('context-model').textContent = model?.id==='demo'?t('Modelo de demostración'):model?.label || t('Modelo eliminado');
-  one('context-model-id').textContent = model?.model || 'No disponible';
+  one('context-model-id').textContent = model?.model || t('No disponible');
   const profiles = connection?.profiles || [];
   one('column-count').textContent = profiles.reduce((sum,p) => sum + p.columns.length,0);
   one('context-columns').innerHTML = profiles.map((profile,index) => '<details class="schema-table"' + (index === 0 ? ' open' : '') + '><summary><b>' + escapeHtml(profile.table) + '</b><small>' + profile.columns.length + '</small></summary><div>' + profile.columns.map(column => '<div class="schema-column" title="' + escapeHtml((column.examples || []).join(' · ')) + '"><span><b>' + escapeHtml(column.name) + '</b><small>' + escapeHtml(column.type) + '</small></span><em>' + column.unique + ' '+t('distintos')+'</em></div>').join('') + '</div></details>').join('');
@@ -212,21 +229,27 @@ function renderContext() {
   one('active-modules').innerHTML = Object.entries(state.modules).filter(([,on]) => on).map(([name]) => '<span>' + t(({summary:'Resumen',table:'Tabla',chart:'Gráfica',map:'Mapa',sql:'SQL'}[name])) + '</span>').join('');
 }
 function welcome() {
-  return '<div class="welcome"><div class="spark-logo">✦</div><p class="eyebrow">AI DATA ASSISTANT</p><h2>Una pregunta empieza<br><em>con los datos correctos.</em></h2><p class="welcome-copy">Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.</p><button type="button" class="primary-button" data-open-new-chat>Crear un chat</button></div>';
+  return '<div class="welcome"><div class="spark-logo">✦</div><p class="eyebrow">AI DATA ASSISTANT</p><h2>'+escapeHtml(t('Una pregunta empieza'))+'<br><em>'+escapeHtml(t('con los datos correctos.'))+'</em></h2><p class="welcome-copy">'+escapeHtml(t('Crea un chat y elige la conexión y el modelo. Analizaré las tablas seleccionadas antes de la primera pregunta.'))+'</p><button type="button" class="primary-button" data-open-new-chat>'+escapeHtml(t('Crear un chat'))+'</button></div>';
 }
 async function openChat(chatId) {
   if (!chatById(chatId)) return;
   state.chatId = chatId; localStorage.setItem('ttd-chat-id',chatId); state.chat = null;
   setView('chat'); renderSidebar(); renderContext();
-  one('chat-stream').innerHTML = '<div class="loading-state" role="status">Cargando conversación…</div>';
+  one('chat-stream').innerHTML = '<div class="loading-state" role="status">'+escapeHtml(t('Cargando conversación…'))+'</div>';
   try {
     const chat = await api('/api/workspace/chats/' + encodeURIComponent(chatId));
     if (state.chatId !== chatId) return;
-    state.chat = chat; one('chat-stream').innerHTML = '';
-    renderOverview(chat);
-    chat.messages.forEach(item => { appendUser(item.question); renderAnswer(item); });
-    scrollChat();
+    state.chat = chat; renderCurrentChat();
   } catch(error) { if (state.chatId === chatId) renderError(error.message); }
+}
+function renderCurrentChat() {
+  const stream=one('chat-stream');
+  $$('.message',stream).forEach(destroyMap);
+  stream.innerHTML='';
+  if(!state.chat){stream.innerHTML=welcome();return;}
+  renderOverview(state.chat);
+  state.chat.messages.forEach(item=>{appendUser(item.question);if(item.kind==='error')renderError(item);else renderAnswer(item);});
+  scrollChat();
 }
 function renderOverview(chat) {
   const node = document.createElement('article'); node.className = 'message assistant-message overview-message';
@@ -242,10 +265,13 @@ function appendTyping() {
   node.innerHTML = '<div class="assistant-avatar">✦</div><div class="answer-body"><div class="typing"><i></i><i></i><i></i></div></div>';
   one('chat-stream').append(node); scrollChat(); return node;
 }
-function renderError(message) {
+function renderError(input) {
+  const error=typeof input==='string'?{message:input}:input;
+  const stage={generation:'Generación de SQL',validation:'Validación de SQL',execution:'Ejecución de SQL'}[error.stage]||'';
   const node = document.createElement('div'); node.className = 'message assistant-message';
-  node.innerHTML = '<div class="assistant-avatar">!</div><div class="answer-body"><h3>No pude completar el análisis</h3><p>' + escapeHtml(message) + '</p></div>';
+  node.innerHTML = '<div class="assistant-avatar">!</div><div class="answer-body query-error"><h3>'+escapeHtml(t(error.error||error.message||'No pude completar el análisis'))+'</h3>'+(stage?'<span class="error-stage">'+escapeHtml(t(stage))+'</span>':'')+(error.cause?'<p><strong>'+escapeHtml(t('Causa:'))+'</strong> '+escapeHtml(error.cause)+'</p>':'')+(error.sql?'<details open><summary>'+escapeHtml(t('SQL que se intentó ejecutar'))+'</summary><div class="sql-panel"><button type="button" class="copy-error-sql">'+escapeHtml(t('Copiar SQL'))+'</button><pre>'+highlightSql(error.sql)+'</pre></div></details>':'')+(!error.cause&&!error.sql?'<p>'+escapeHtml(error.message||'')+'</p>':'')+'</div>';
   one('chat-stream').append(node); scrollChat();
+  $('.copy-error-sql',node)?.addEventListener('click',async event=>{try{await navigator.clipboard.writeText(error.sql);event.currentTarget.textContent=t('Copiado ✓');}catch{toast(t('No se pudo copiar la consulta.'),true);}});
 }
 function scrollChat() { requestAnimationFrame(() => { one('chat-stream').scrollTop = one('chat-stream').scrollHeight; }); }
 function resizeComposer() { const el=one('question'); el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
@@ -260,9 +286,19 @@ async function ask(question) {
       additional_context:chatById(chatId)?.instructions || ''
     });
     typing.remove();
-    if (state.chatId === chatId) renderAnswer(result);
+    if (state.chatId === chatId) {
+      state.chat?.messages.push(result);
+      renderAnswer(result);
+    }
     await refreshWorkspace();
-  } catch(error) { typing.remove(); if (state.chatId === chatId) renderError(error.message); }
+  } catch(error) {
+    typing.remove();
+    if (state.chatId === chatId) {
+      const failed = {kind:'error',question,error:error.message,cause:error.cause||'',sql:error.sql||'',stage:error.stage||''};
+      state.chat?.messages.push(failed);
+      renderError(failed);
+    }
+  }
   finally { state.busy = false; renderContext(); if (state.chatId === chatId) one('question').focus(); }
 }
 
@@ -275,7 +311,7 @@ function renderAnswer(result) {
   if (result.modules.map && result.map.enabled) tabs.push(['map',t('Mapa')]);
   if (result.modules.sql) tabs.push(['sql','SQL']);
   const node=document.createElement('div'); node.className='message assistant-message';
-  node.innerHTML='<div class="assistant-avatar">✦</div><div class="answer-body"><h3>'+escapeHtml(result.title)+'</h3>'+(result.modules.summary ? '<p>'+escapeHtml(result.summary)+'</p>' : '')+'<div class="answer-tabs">'+tabs.map(([key,label],index)=>'<button type="button" data-result-tab="'+key+'" class="'+(index===0?'active':'')+'">'+label+'</button>').join('')+'</div><div class="result-panel">'+(tabs.length?panelFor(tabs[0][0],result):'<div class="sql-panel">No hay módulos activos.</div>')+'</div></div>';
+  node.innerHTML='<div class="assistant-avatar">✦</div><div class="answer-body"><h3>'+escapeHtml(result.title)+'</h3>'+(result.modules.summary ? '<p>'+escapeHtml(result.summary)+'</p>' : '')+'<div class="answer-tabs">'+tabs.map(([key,label],index)=>'<button type="button" data-result-tab="'+key+'" class="'+(index===0?'active':'')+'">'+escapeHtml(label)+'</button>').join('')+'</div><div class="result-panel">'+(tabs.length?panelFor(tabs[0][0],result):'<div class="sql-panel">'+escapeHtml(t('No hay módulos activos.'))+'</div>')+'</div></div>';
   one('chat-stream').append(node);
   $$('[data-result-tab]',node).forEach(button=>button.addEventListener('click',()=>{
     destroyMap(node); $$('[data-result-tab]',node).forEach(other=>other.classList.toggle('active',other===button));
@@ -285,12 +321,12 @@ function renderAnswer(result) {
 }
 function panelFor(type,result) {
   if (type==='table') return '<div class="table-scroll"><table><thead><tr><th class="row-number" scope="col">#</th>'+result.columns.map(col=>'<th scope="col">'+escapeHtml(col)+'</th>').join('')+'</tr></thead><tbody>'+result.rows.map((row,index)=>'<tr><th class="row-number" scope="row">'+(index+1)+'</th>'+result.columns.map(col=>'<td>'+formatValue(row[col])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
-  if (type==='sql') return '<div class="sql-panel"><button type="button" class="copy-sql">Copiar</button><pre>'+highlightSql(result.sql)+'</pre></div>';
+  if (type==='sql') return '<div class="sql-panel"><button type="button" class="copy-sql">'+escapeHtml(t('Copiar'))+'</button><pre>'+highlightSql(result.sql)+'</pre></div>';
   if (type==='map') return renderMap(result);
   return renderChart(result);
 }
 function bindPanel(node,result) {
-  $('.copy-sql',node)?.addEventListener('click',async event=>{try { await navigator.clipboard.writeText(result.sql); event.currentTarget.textContent='Copiado ✓'; } catch { toast('No se pudo copiar la consulta.',true); }});
+  $('.copy-sql',node)?.addEventListener('click',async event=>{try { await navigator.clipboard.writeText(result.sql); event.currentTarget.textContent=t('Copiado ✓'); } catch { toast(t('No se pudo copiar la consulta.'),true); }});
   initMap(node,result);
 }
 function highlightSql(sql) { return escapeHtml(sql).replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|ON|GROUP BY|ORDER BY|LIMIT|AS|SUM|COUNT|AVG|ROUND|DESC|ASC)\b/gi,'<span class="kw">$1</span>'); }
@@ -320,7 +356,7 @@ function chartData(result) {
 }
 function renderChart(result) {
   const data=chartData(result);
-  if (!data.series.length || !data.labels.length) return '<div class="sql-panel">No hay categorías y medidas numéricas para visualizar.</div>';
+  if (!data.series.length || !data.labels.length) return '<div class="sql-panel">'+escapeHtml(t('No hay categorías y medidas numéricas para visualizar.'))+'</div>';
   const count='<p class="chart-count">'+data.rowCount+' '+t('filas representadas')+' · '+data.labels.length+' '+t('posiciones en el eje X')+'</p>';
   if (result.chart==='donut' && data.series.length===1 && data.labels.length<=16) {
     const values=data.series[0].values,total=values.reduce((a,b)=>a+Math.max(0,b),0)||1;let cursor=0;
@@ -347,7 +383,7 @@ function renderChart(result) {
     const groupW=plotW/data.labels.length,barW=Math.max(3,Math.min(36,(groupW-12)/(stacked?1:data.series.length)));
     marks=data.labels.map((label,i)=>{let accumulated=0;return data.series.map((s,j)=>{const v=s.values[i],base=stacked?accumulated:0;accumulated+=v;const xx=stacked?x(i)-barW/2:x(i)-barW*data.series.length/2+j*barW,topY=y(base+v,secondary[j]),zeroY=y(base,secondary[j]),yy=Math.min(topY,zeroY),hh=Math.max(1,Math.abs(topY-zeroY));return '<rect class="chart-rect" x="'+xx+'" y="'+yy+'" width="'+Math.max(1,barW-2)+'" height="'+hh+'" rx="2" fill="'+chartColor(j)+'"><title>'+escapeHtml(label+' · '+s.name)+': '+formatValue(v)+'</title></rect>';}).join('');}).join('');
   }
-  const legend=data.series.map((s,i)=>'<span><i style="background:'+chartColor(i)+'"></i>'+escapeHtml(s.name)+(secondary[i]?' · eje derecho':'')+'</span>').join('');
+  const legend=data.series.map((s,i)=>'<span><i style="background:'+chartColor(i)+'"></i>'+escapeHtml(s.name)+(secondary[i]?' · '+escapeHtml(t('eje derecho')):'')+'</span>').join('');
   const svg='<svg class="chart-svg" style="min-width:'+width+'px" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escapeHtml(result.title)+'; eje horizontal '+escapeHtml(data.xcol)+'; '+escapeHtml(data.series.map(s=>s.name).join(', '))+'"><title>'+escapeHtml(result.title)+'</title>'+grid+'<line class="chart-axis" x1="'+left+'" y1="'+top+'" x2="'+left+'" y2="'+(top+plotH)+'"/><line class="chart-axis" x1="'+left+'" y1="'+(top+plotH)+'" x2="'+(left+plotW)+'" y2="'+(top+plotH)+'"/>'+labels+marks+'<text class="chart-axis-title" x="'+left+'" y="22">'+escapeHtml(data.series.filter((_,i)=>!secondary[i]).map(s=>s.name).join(' · '))+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-title" x="'+(left+plotW)+'" y="22" text-anchor="end">'+escapeHtml(data.series.filter((_,i)=>secondary[i]).map(s=>s.name).join(' · '))+'</text>':'')+'<text class="chart-axis-title" x="'+(left+plotW/2)+'" y="'+(height-5)+'" text-anchor="middle">'+escapeHtml(data.xcol)+'</text></svg>';
   return '<div class="chart-panel"><div class="chart-legend">'+legend+'</div>'+svg+count+'</div>';
 }
@@ -355,13 +391,13 @@ let mapSequence=0;
 function renderMap(result) {
   const lat=result.map.latitude,lon=result.map.longitude;
   const rows=result.rows.filter(row=>Number.isFinite(Number(row[lat])) && Number.isFinite(Number(row[lon]))).slice(0,100);
-  if(!rows.length)return '<div class="map-unavailable">No hay coordenadas válidas.</div>';
-  return '<div class="map-shell"><div id="result-map-'+(++mapSequence)+'" class="leaflet-map" role="region" aria-label="Mapa interactivo con '+rows.length+' ubicaciones"></div><p class="map-caption">'+rows.length+' ubicaciones · usa los controles para ampliar y desplazarte</p></div>';
+  if(!rows.length)return '<div class="map-unavailable">'+escapeHtml(t('No hay coordenadas válidas.'))+'</div>';
+  return '<div class="map-shell"><div id="result-map-'+(++mapSequence)+'" class="leaflet-map" role="region" aria-label="'+escapeHtml(t('Mapa interactivo con'))+' '+rows.length+' '+escapeHtml(t('ubicaciones'))+'"></div><p class="map-caption">'+rows.length+' '+escapeHtml(t('ubicaciones'))+' · '+escapeHtml(t('usa los controles para ampliar y desplazarte'))+'</p></div>';
 }
 function destroyMap(node) { const container=$('.leaflet-map',node); if(container?._mapInstance){container._mapInstance.remove();container._mapInstance=null;} }
 function initMap(node,result) {
   const container=$('.leaflet-map',node);if(!container||container._mapInstance)return;
-  if(!window.L){container.innerHTML='<div class="map-unavailable">No se pudo cargar Leaflet.</div>';return;}
+  if(!window.L){container.innerHTML='<div class="map-unavailable">'+escapeHtml(t('No se pudo cargar Leaflet.'))+'</div>';return;}
   const lat=result.map.latitude,lon=result.map.longitude,rows=result.rows.filter(row=>Number.isFinite(Number(row[lat]))&&Number.isFinite(Number(row[lon]))).slice(0,100);
   const label=result.columns.find(col=>![lat,lon].includes(col))||lat;
   const map=L.map(container,{scrollWheelZoom:false});container._mapInstance=map;
@@ -376,16 +412,16 @@ function connectionSpec() {
   const engine=value('connection-engine');
   if (engine==='cloudera') {
     const name=value('cloudera-name'),username=value('cloudera-user'),workload_password=one('cloudera-password').value;
-    if(!name||!username||!workload_password)throw new Error('Indica el nombre registrado, usuario y Workload Password.');
+    if(!name||!username||!workload_password)throw new Error(t('Indica el nombre registrado, usuario y Workload Password.'));
     return {engine,name,username,workload_password,dialect:value('cloudera-dialect')};
   }
   if(engine==='postgresql') {
     const url=value('postgres-url'),database=value('postgres-database'),username=value('postgres-user');
-    if(!url||!database||!username)throw new Error('Completa URL, base inicial y usuario de PostgreSQL.');
+    if(!url||!database||!username)throw new Error(t('Completa URL, base inicial y usuario de PostgreSQL.'));
     return {engine,url,database,username,password:one('postgres-password').value};
   }
   const jdbc_url=value('trino-url');
-  if(!jdbc_url)throw new Error('Indica la JDBC URL de Trino.');
+  if(!jdbc_url)throw new Error(t('Indica la JDBC URL de Trino.'));
   return {engine,jdbc_url,username:value('trino-user'),password:one('trino-password').value};
 }
 function resetConnectionDiscovery() {
@@ -399,39 +435,39 @@ async function discoverConnection() {
   resetConnectionDiscovery();state.pendingConnection=sequence;
   try {
     const spec=connectionSpec();
-    button.disabled=true;status('#connection-status','Comprobando acceso…');
+    button.disabled=true;status('#connection-status',t('Comprobando acceso…'));
     const result=await post('/api/workspace/connections/discover',{spec});
     if(sequence!==state.pendingConnection)return;
     state.connectionTicket=result.ticket;
     one('connection-database').innerHTML=result.databases.map(name=>'<option value="'+escapeHtml(name)+'">'+escapeHtml(name)+'</option>').join('');
     one('connection-discovery').hidden=false;
     await loadConnectionTables(sequence);
-    if(sequence===state.pendingConnection)status('#connection-status','Conexión comprobada. Selecciona las tablas.');
+    if(sequence===state.pendingConnection)status('#connection-status',t('Conexión comprobada. Selecciona las tablas.'));
   } catch(error) { if(sequence===state.pendingConnection)status('#connection-status',error.message,true); }
   finally {button.disabled=false;}
 }
 async function loadConnectionTables(sequence=state.pendingConnection) {
   if(!state.connectionTicket)return;
   const tableSequence=++state.pendingTables;
-  one('connection-tables').innerHTML='<p class="empty-state">Descubriendo tablas…</p>';
+  one('connection-tables').innerHTML='<p class="empty-state">'+escapeHtml(t('Descubriendo tablas…'))+'</p>';
   try {
     const tables=await post('/api/workspace/connections/tables',{ticket:state.connectionTicket,database:value('connection-database')});
     if(sequence!==state.pendingConnection||tableSequence!==state.pendingTables)return;
-    one('connection-tables').innerHTML=tables.map(name=>'<label class="table-check"><input type="checkbox" value="'+escapeHtml(name)+'"><b>'+escapeHtml(name)+'</b></label>').join('')||'<p class="empty-state">No se encontraron tablas.</p>';
+    one('connection-tables').innerHTML=tables.map(name=>'<label class="table-check"><input type="checkbox" value="'+escapeHtml(name)+'"><b>'+escapeHtml(name)+'</b></label>').join('')||'<p class="empty-state">'+escapeHtml(t('No se encontraron tablas.'))+'</p>';
   } catch(error) { if(sequence===state.pendingConnection&&tableSequence===state.pendingTables)status('#connection-status',error.message,true); }
 }
 async function saveConnection(event) {
   event.preventDefault();
   const tables=$$('#connection-tables input:checked').map(input=>input.value),button=one('save-connection');
-  if(!state.connectionTicket){status('#connection-status','Prueba la conexión antes de guardarla.',true);return;}
-  if(!value('connection-label')){status('#connection-status','Ponle un nombre para reconocerla.',true);one('connection-label').focus();return;}
-  if(!tables.length||tables.length>12){status('#connection-status','Selecciona entre 1 y 12 tablas.',true);return;}
-  button.disabled=true;status('#connection-status','Analizando tablas y columnas…');
+  if(!state.connectionTicket){status('#connection-status',t('Prueba la conexión antes de guardarla.'),true);return;}
+  if(!value('connection-label')){status('#connection-status',t('Ponle un nombre para reconocerla.'),true);one('connection-label').focus();return;}
+  if(!tables.length||tables.length>12){status('#connection-status',t('Selecciona entre 1 y 12 tablas.'),true);return;}
+  button.disabled=true;status('#connection-status',t('Analizando tablas y columnas…'));
   try {
     const saved=await post('/api/workspace/connections',{ticket:state.connectionTicket,label:value('connection-label'),database:value('connection-database'),tables});
     one('connection-form').reset();one('connection-engine').value='cloudera';
     $$('[data-engine]').forEach(panel=>panel.hidden=panel.dataset.engine!=='cloudera');
-    resetConnectionDiscovery();await refreshWorkspace();toast(saved.label+' guardada con su perfil.');
+    resetConnectionDiscovery();await refreshWorkspace();toast(tf('Conexión {name} guardada con su perfil.',{name:saved.label}));
     one('chat-connection').value=saved.id;renderChatSelectors();
   } catch(error) {status('#connection-status',error.message,true);}
   finally {button.disabled=false;}
@@ -440,9 +476,9 @@ function modelConfig() {
   const auth_type=value('auth-type');
   const config={endpoint:value('model-endpoint'),model:value('model-name'),auth_type,
     token:one('model-token').value,api_key_id:value('api-key-id'),api_key_value:one('api-key-value').value};
-  if(!config.endpoint)throw new Error('Indica el endpoint del modelo.');
-  if(auth_type==='apikey'&&(!config.api_key_id||!config.api_key_value))throw new Error('Indica API Key ID y Value.');
-  if(auth_type!=='apikey'&&!config.token)throw new Error('Indica el token de acceso.');
+  if(!config.endpoint)throw new Error(t('Indica el endpoint del modelo.'));
+  if(auth_type==='apikey'&&(!config.api_key_id||!config.api_key_value))throw new Error(t('Indica API Key ID y Value.'));
+  if(auth_type!=='apikey'&&!config.token)throw new Error(t('Indica el token de acceso.'));
   return config;
 }
 function invalidateModelTest() {
@@ -452,25 +488,25 @@ async function testModel() {
   const button=one('test-model');invalidateModelTest();
   const sequence=state.pendingModel;
   try {
-    const config=modelConfig();button.disabled=true;status('#model-status','Probando endpoint y credenciales…');
+    const config=modelConfig();button.disabled=true;status('#model-status',t('Probando endpoint y credenciales…'));
     const result=await post('/api/workspace/models/test',config);
     if(sequence!==state.pendingModel)return;
     state.modelTicket=result.ticket;one('model-name').value=result.model;
     one('model-endpoint').value=result.endpoint;
     one('save-model').disabled=false;
-    status('#model-status','Conectado · '+result.model+' · '+result.latency_ms+' ms');
+    status('#model-status',tf('Conectado · {model} · {latency} ms',{model:result.model,latency:result.latency_ms}));
   } catch(error) {if(sequence===state.pendingModel)status('#model-status',error.message,true);}
   finally {button.disabled=false;}
 }
 async function saveModel(event) {
   event.preventDefault();
-  if(!state.modelTicket){status('#model-status','Prueba el modelo antes de guardarlo.',true);return;}
-  if(!value('model-label')){status('#model-status','Ponle un nombre para reconocerlo.',true);one('model-label').focus();return;}
+  if(!state.modelTicket){status('#model-status',t('Prueba el modelo antes de guardarlo.'),true);return;}
+  if(!value('model-label')){status('#model-status',t('Ponle un nombre para reconocerlo.'),true);one('model-label').focus();return;}
   const button=one('save-model');button.disabled=true;
   try {
     const saved=await post('/api/workspace/models',{ticket:state.modelTicket,label:value('model-label')});
     one('model-form').reset();invalidateModelTest();await refreshWorkspace();
-    toast(saved.label+' guardado y listo para usar.');
+    toast(tf('Modelo {name} guardado y listo para usar.',{name:saved.label}));
     one('chat-model').value=saved.id;renderChatSelectors();
   } catch(error) {status('#model-status',error.message,true);button.disabled=false;}
 }
@@ -481,20 +517,20 @@ function openNewChat() {
 async function createChat(event) {
   event.preventDefault();
   const connection_id=value('chat-connection'),model_id=value('chat-model'),button=one('create-chat');
-  if(model_id==='demo'&&connection_id!=='demo'){status('#chat-create-status','Elige un modelo probado para esta conexión.',true);return;}
-  button.disabled=true;status('#chat-create-status','Analizando el perfil de datos con el modelo…');
+  if(model_id==='demo'&&connection_id!=='demo'){status('#chat-create-status',t('Elige un modelo probado para esta conexión.'),true);return;}
+  button.disabled=true;status('#chat-create-status',t('Analizando el perfil de datos con el modelo…'));
   try {
     const chat=await post('/api/workspace/chats',{connection_id,model_id,model_language:state.modelLanguage});
     one('new-chat-dialog').close();await refreshWorkspace();await openChat(chat.id);
-    toast('Chat listo. Ya puedes preguntar.');
+    toast(t('Chat listo. Ya puedes preguntar.'));
   } catch(error) {status('#chat-create-status',error.message,true);}
   finally {button.disabled=false;}
 }
 async function deleteItem(kind,id) {
   const confirmation={
-    chat:'¿Eliminar este chat y todo su historial guardado? No se puede deshacer.',
-    connection:'¿Eliminar esta conexión? Los chats asociados conservarán su historial, pero no podrán recibir nuevas preguntas.',
-    model:'¿Eliminar este modelo? Los chats asociados conservarán su historial, pero no podrán recibir nuevas preguntas.'
+    chat:t('¿Eliminar este chat y todo su historial guardado? No se puede deshacer.'),
+    connection:t('¿Eliminar esta conexión? Los chats asociados conservarán su historial, pero no podrán recibir nuevas preguntas.'),
+    model:t('¿Eliminar este modelo? Los chats asociados conservarán su historial, pero no podrán recibir nuevas preguntas.')
   }[kind];
   if(!window.confirm(confirmation))return;
   const path=kind==='chat'?'/api/workspace/chats/':'/api/workspace/'+kind+'s/';
@@ -502,19 +538,26 @@ async function deleteItem(kind,id) {
     await api(path+encodeURIComponent(id),{method:'DELETE'});
     if(kind==='chat'&&state.chatId===id){state.chatId='';state.chat=null;localStorage.removeItem('ttd-chat-id');one('chat-stream').innerHTML=welcome();}
     translateStatic();
-    await refreshWorkspace();toast('Elemento eliminado.');
+    await refreshWorkspace();toast(t('Elemento eliminado.'));
   } catch(error) {toast(error.message,true);}
 }
 function savePreferences(event) {
   event.preventDefault();
   state.modules=Object.fromEntries($$('[data-module]').map(el=>[el.dataset.module,el.checked]));
-  state.uiTheme=value('ui-theme');state.uiLanguage=value('ui-language');state.modelLanguage=value('model-language');
-  localStorage.setItem('ttd-theme',state.uiTheme);localStorage.setItem('ttd-language',state.uiLanguage);
-  sessionStorage.setItem('ttd-model-language',state.modelLanguage);
-  document.documentElement.dataset.theme=state.uiTheme;document.documentElement.lang=state.uiLanguage;
+  state.uiTheme=value('ui-theme');
+  localStorage.setItem('ttd-theme',state.uiTheme);
+  document.documentElement.dataset.theme=state.uiTheme;
   document.querySelector('meta[name="theme-color"]').content=state.uiTheme==='light'?'#f3f5f8':'#07111f';
-  translateStatic();setView(state.view);renderSidebar();
-  one('preferences-dialog').close();renderContext();toast('Preferencias guardadas.');
+  applyLanguage(value('ui-language'),value('model-language'));
+  one('preferences-dialog').close();toast(t('Preferencias guardadas.'));
+}
+function applyLanguage(uiLanguage, modelLanguage=uiLanguage) {
+  state.uiLanguage=validLanguage(uiLanguage);state.modelLanguage=validLanguage(modelLanguage);
+  localStorage.setItem('ttd-language',state.uiLanguage);
+  localStorage.setItem('ttd-model-language',state.modelLanguage);
+  one('ui-language').value=state.uiLanguage;
+  one('model-language').value=state.modelLanguage;
+  translateStatic();setView(state.view);renderSidebar();renderCatalogs();renderChatSelectors();renderContext();renderCurrentChat();
 }
 let recognition;
 const instructionTimers = new Map();
@@ -523,22 +566,23 @@ function queueInstructionSave(chatId, instructions) {
   instructionTimers.set(chatId, setTimeout(async () => {
     instructionTimers.delete(chatId);
     try { await api('/api/workspace/chats/' + encodeURIComponent(chatId), {method:'PATCH',body:JSON.stringify({instructions})}); }
-    catch(error) { toast('No se guardaron las instrucciones: '+error.message,true); }
+    catch(error) { toast(t('No se guardaron las instrucciones:')+' '+error.message,true); }
   }, 450));
 }
 function toggleSpeech() {
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SpeechRecognition){toast('El reconocimiento de voz no está disponible en este navegador.',true);return;}
+  if(!SpeechRecognition){toast(t('El reconocimiento de voz no está disponible en este navegador.'),true);return;}
   if(recognition){recognition.stop();return;}
-  recognition=new SpeechRecognition();recognition.lang={es:'es-ES',en:'en-US',it:'it-IT',de:'de-DE',fr:'fr-FR'}[state.uiLanguage];
+  recognition=new SpeechRecognition();recognition.lang={es:'es-ES',ca:'ca-ES',eu:'eu-ES',gl:'gl-ES',en:'en-US',it:'it-IT',de:'de-DE',fr:'fr-FR'}[state.uiLanguage];
   recognition.interimResults=true;
-  recognition.onstart=()=>{one('mic-button').classList.add('listening');one('mic-status').textContent='Escuchando…';};
+  recognition.onstart=()=>{one('mic-button').classList.add('listening');one('mic-status').textContent=t('Escuchando…');};
   recognition.onresult=event=>{one('question').value=[...event.results].map(result=>result[0].transcript).join('');resizeComposer();};
   recognition.onend=()=>{one('mic-button').classList.remove('listening');one('mic-status').textContent='';recognition=null;};
-  recognition.onerror=event=>toast('Micrófono: '+event.error,true);
+  recognition.onerror=event=>toast(t('Micrófono:')+' '+event.error,true);
   recognition.start();
 }
 function bindEvents() {
+  one('top-language').addEventListener('change',event=>applyLanguage(event.target.value));
   $$('[data-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
   one('new-chat').addEventListener('click',openNewChat);
   one('new-connection').addEventListener('click',()=>{setView('connections');one('connection-label').focus();});
@@ -578,7 +622,7 @@ function bindEvents() {
 }
 async function initialize() {
   bindEvents();
-  one('ui-theme').value=state.uiTheme;one('ui-language').value=state.uiLanguage;one('model-language').value=state.modelLanguage;
+  one('ui-theme').value=state.uiTheme;one('ui-language').value=state.uiLanguage;one('model-language').value=state.modelLanguage;one('top-language').value=state.uiLanguage;
   document.documentElement.lang=state.uiLanguage;
   one('chat-stream').innerHTML=welcome();
   translateStatic();setView('chat');
