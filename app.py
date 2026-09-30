@@ -121,17 +121,23 @@ def selected_connection(payload):
         name = str(direct.get("name", ""))
         if not re.fullmatch(r"[A-Za-z0-9_. -]{1,200}", name):
             raise ValueError("Indica un nombre válido de conexión registrada en Cloudera.")
+        auth_mode = str(direct.get("auth_mode") or ("credentials" if direct.get("username") or direct.get("workload_password") else "runtime")).strip().lower()
+        if auth_mode not in {"runtime", "credentials"}:
+            raise ValueError("Selecciona un método de autenticación de Cloudera válido.")
         username = str(direct.get("username", "")).strip()
         workload_password = str(direct.get("workload_password", ""))
-        if not username or not workload_password:
+        if auth_mode == "credentials" and (not username or not workload_password):
             raise ValueError("Indica el usuario y la Workload Password de Cloudera.")
-        return {
+        spec = {
             "name": name,
             "label": str(direct.get("label") or name), "engine": "cloudera",
             "cml_registered": True,
             "dialect": "hive" if direct.get("dialect") == "hive" else "impala",
-            "username": username, "workload_password": workload_password,
+            "auth_mode": auth_mode,
         }
+        if auth_mode == "credentials":
+            spec.update(username=username, workload_password=workload_password)
+        return spec
     name = payload.get("connection")
     for item in catalog.connections():
         if item["name"] == name:

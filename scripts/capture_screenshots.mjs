@@ -1,5 +1,6 @@
 // Capture reproducible, secret-free README screenshots from the local demo app.
 // Usage: node scripts/capture_screenshots.mjs (app.py must be running on 8091).
+// Set TTD_CAPTURE_PORT when the app runs on a different local port.
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,12 +8,14 @@ import { join, resolve } from 'node:path';
 
 const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const output = resolve('docs/screenshots');
+const appPort = Number(process.env.TTD_CAPTURE_PORT || 8091);
+if (!Number.isInteger(appPort) || appPort < 1 || appPort > 65535) throw new Error('Invalid TTD_CAPTURE_PORT');
 const profile = await mkdtemp(join(tmpdir(), 'talk-to-data-capture-'));
 await mkdir(output, { recursive: true });
 const browser = spawn(chrome, [
   '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
   '--window-size=1440,900', '--remote-debugging-port=9339',
-  `--user-data-dir=${profile}`, 'http://127.0.0.1:8091/',
+  `--user-data-dir=${profile}`, `http://127.0.0.1:${appPort}/`,
 ], { stdio: 'ignore' });
 
 let socket;
@@ -21,7 +24,7 @@ try {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const pages = await (await fetch('http://127.0.0.1:9339/json')).json();
-      page = pages.find(item => item.type === 'page' && item.url.includes('8091'));
+      page = pages.find(item => item.type === 'page' && item.url.includes(`:${appPort}/`));
       if (page) break;
     } catch { /* Chrome is still starting. */ }
     await new Promise(resolveWait => setTimeout(resolveWait, 250));

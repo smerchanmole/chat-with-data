@@ -88,7 +88,7 @@ const translations = {
     'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
   }
 };
-for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {});
+for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {});
 const originalText = new WeakMap();
 function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
 function tf(key, values={}) { return t(key).replace(/\{(\w+)\}/g, (_,name)=>String(values[name]??'')); }
@@ -408,12 +408,26 @@ function initMap(node,result) {
   requestAnimationFrame(()=>map.invalidateSize());
 }
 
+function syncClouderaAuthFields() {
+  const explicit = value('cloudera-auth-mode') === 'credentials';
+  one('cloudera-credential-fields').hidden = !explicit;
+  one('cloudera-auth-help').hidden = explicit;
+  one('cloudera-auth-credentials-help').hidden = !explicit;
+  one('cloudera-user').disabled = !explicit;
+  one('cloudera-password').disabled = !explicit;
+}
 function connectionSpec() {
   const engine=value('connection-engine');
   if (engine==='cloudera') {
-    const name=value('cloudera-name'),username=value('cloudera-user'),workload_password=one('cloudera-password').value;
-    if(!name||!username||!workload_password)throw new Error(t('Indica el nombre registrado, usuario y Workload Password.'));
-    return {engine,name,username,workload_password,dialect:value('cloudera-dialect')};
+    const name=value('cloudera-name'),auth_mode=value('cloudera-auth-mode');
+    if(!name)throw new Error(t('Indica el nombre registrado de la conexión.'));
+    const spec={engine,name,auth_mode,dialect:value('cloudera-dialect')};
+    if(auth_mode==='credentials') {
+      const username=value('cloudera-user'),workload_password=one('cloudera-password').value;
+      if(!username||!workload_password)throw new Error(t('Indica el nombre registrado, usuario y Workload Password.'));
+      Object.assign(spec,{username,workload_password});
+    }
+    return spec;
   }
   if(engine==='postgresql') {
     const url=value('postgres-url'),database=value('postgres-database'),username=value('postgres-user');
@@ -467,6 +481,7 @@ async function saveConnection(event) {
     const saved=await post('/api/workspace/connections',{ticket:state.connectionTicket,label:value('connection-label'),database:value('connection-database'),tables});
     one('connection-form').reset();one('connection-engine').value='cloudera';
     $$('[data-engine]').forEach(panel=>panel.hidden=panel.dataset.engine!=='cloudera');
+    syncClouderaAuthFields();
     resetConnectionDiscovery();await refreshWorkspace();toast(tf('Conexión {name} guardada con su perfil.',{name:saved.label}));
     one('chat-connection').value=saved.id;renderChatSelectors();
   } catch(error) {status('#connection-status',error.message,true);}
@@ -600,6 +615,7 @@ function bindEvents() {
   });
   one('connection-engine').addEventListener('change',event=>{$$('[data-engine]').forEach(panel=>panel.hidden=panel.dataset.engine!==event.target.value);resetConnectionDiscovery();});
   one('cloudera-dialect').addEventListener('change',resetConnectionDiscovery);
+  one('cloudera-auth-mode').addEventListener('change',()=>{syncClouderaAuthFields();resetConnectionDiscovery();});
   $$('#connection-form input').forEach(input=>input.addEventListener('input',()=>{if(input.id!=='connection-label'&&state.connectionTicket)resetConnectionDiscovery();}));
   one('discover-connection').addEventListener('click',discoverConnection);
   one('connection-database').addEventListener('change',()=>loadConnectionTables());
@@ -622,6 +638,7 @@ function bindEvents() {
 }
 async function initialize() {
   bindEvents();
+  syncClouderaAuthFields();
   one('ui-theme').value=state.uiTheme;one('ui-language').value=state.uiLanguage;one('model-language').value=state.modelLanguage;one('top-language').value=state.uiLanguage;
   document.documentElement.lang=state.uiLanguage;
   one('chat-stream').innerHTML=welcome();

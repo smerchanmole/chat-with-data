@@ -146,21 +146,37 @@ class DataCatalog:
             import cml.data_v1 as cmldata
         except ImportError as exc:
             raise RuntimeError("cml.data_v1 no está disponible en este entorno. Ejecuta la app dentro de CML o usa el modo demo.") from exc
-        credentials = {
-            "USERNAME": str(spec.get("username", "")).strip(),
-            "PASSWORD": str(spec.get("workload_password", "")),
-        }
-        if not credentials["USERNAME"] or not credentials["PASSWORD"]:
-            raise ValueError("Indica el usuario y la Workload Password de Cloudera.")
+        auth_mode = str(spec.get("auth_mode") or ("credentials" if spec.get("username") or spec.get("workload_password") else "runtime")).strip().lower()
+        if auth_mode not in {"runtime", "credentials"}:
+            raise ValueError("Método de autenticación de Cloudera no válido.")
+        credentials = None
+        if auth_mode == "credentials":
+            credentials = {"USERNAME": str(spec.get("username", "")).strip(),
+                           "PASSWORD": str(spec.get("workload_password", ""))}
+            if not credentials["USERNAME"] or not credentials["PASSWORD"]:
+                raise ValueError("Indica el usuario y la Workload Password de Cloudera.")
         conn = None
         query_failed = False
         try:
-            conn = cmldata.get_connection(spec["name"], credentials)
+            if credentials is not None:
+                conn = cmldata.get_connection(spec["name"], credentials)
+            else:
+                conn = cmldata.get_connection(spec["name"])
             return conn.get_pandas_dataframe(sql)
         except Exception as exc:
             query_failed = True
             dialect = "Hive" if spec.get("dialect") == "hive" else "Impala"
-            raise RuntimeError(f"{dialect} ({spec['name']}): {str(exc).strip() or type(exc).__name__}") from exc
+            detail = str(exc).strip() or type(exc).__name__
+            if "no kerberos credentials" in detail.lower():
+                if auth_mode == "runtime":
+                    detail = ("La identidad que ejecuta esta app no tiene un ticket Kerberos accesible. "
+                              "Comprueba 'Run as' y Hadoop Authentication de esa identidad, y reinicia la app. "
+                              "Detalle: " + detail)
+                else:
+                    detail = ("La conexión registrada está intentando usar Kerberos pese a recibir usuario y clave. "
+                              "Comprueba su autenticación y prueba el modo de credenciales del runtime. "
+                              "Detalle: " + detail)
+            raise RuntimeError(f"{dialect} ({spec['name']}): {detail}") from exc
         finally:
             if conn is not None:
                 try:

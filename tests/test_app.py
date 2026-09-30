@@ -99,6 +99,21 @@ class TalkToDataTests(unittest.TestCase):
         self.assertNotIn("workload_password", str(saved))
         self.assertEqual(self.client.post("/api/workspace/connections", json={"ticket":tested["ticket"], "label":"Otra", "database":"analytics", "tables":["sales"]}).status_code, 400)
 
+    def test_runtime_cloudera_connection_needs_no_user_or_password(self):
+        spec = {"engine": "cloudera", "name": "default-impala", "dialect": "impala", "auth_mode": "runtime"}
+        with patch.object(catalog, "databases", return_value=["default"]) as databases:
+            response = self.client.post("/api/workspace/connections/discover", json={"spec": spec})
+        self.assertEqual(response.status_code, 200)
+        tested = databases.call_args.args[0]
+        self.assertEqual(tested["auth_mode"], "runtime")
+        self.assertNotIn("username", tested)
+        self.assertNotIn("workload_password", tested)
+        with patch.object(catalog, "databases", return_value=["default"]) as databases:
+            self.client.post("/api/workspace/connections/discover", json={"spec": {**spec, "username": "ignored", "workload_password": "ignored-secret"}})
+        self.assertNotIn("workload_password", databases.call_args.args[0])
+        invalid = self.client.post("/api/workspace/connections/discover", json={"spec": {**spec, "auth_mode": "unknown"}})
+        self.assertEqual(invalid.status_code, 400)
+
     def test_model_requires_successful_test_before_save(self):
         config = {"endpoint":"https://model.example/v1/chat/completions", "model":"example/model", "auth_type":"jwt", "token":"secret"}
         self.assertEqual(self.client.post("/api/workspace/models", json={"ticket":"invalid", "label":"Modelo"}).status_code, 400)
@@ -251,6 +266,28 @@ class TalkToDataTests(unittest.TestCase):
             "vast-data-demo", {"USERNAME": "data-user", "PASSWORD": "workload-secret"},
         )
         connection.close.assert_called_once()
+
+    def test_cml_runtime_authentication_does_not_pass_credentials(self):
+        connection = Mock()
+        connection.get_pandas_dataframe.return_value = "frame"
+        data_v1 = ModuleType("cml.data_v1")
+        data_v1.get_connection = Mock(return_value=connection)
+        cml_package = ModuleType("cml")
+        cml_package.data_v1 = data_v1
+        with patch.dict(sys.modules, {"cml": cml_package, "cml.data_v1": data_v1}):
+            result = catalog._cml_query({"name": "default-impala", "auth_mode": "runtime"}, "SHOW DATABASES")
+        self.assertEqual(result, "frame")
+        data_v1.get_connection.assert_called_once_with("default-impala")
+        connection.close.assert_called_once()
+
+    def test_cml_runtime_kerberos_error_explains_app_identity(self):
+        data_v1 = ModuleType("cml.data_v1")
+        data_v1.get_connection = Mock(side_effect=RuntimeError("No Kerberos credentials available (default cache: FILE:/tmp/krb5cc_8536)"))
+        cml_package = ModuleType("cml")
+        cml_package.data_v1 = data_v1
+        with patch.dict(sys.modules, {"cml": cml_package, "cml.data_v1": data_v1}):
+            with self.assertRaisesRegex(RuntimeError, "Run as.*Hadoop Authentication"):
+                catalog._cml_query({"name": "default-impala", "auth_mode": "runtime"}, "SHOW DATABASES")
 
     def test_impala_failure_preserves_engine_message_and_closes_connection(self):
         connection = Mock()

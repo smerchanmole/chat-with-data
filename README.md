@@ -70,22 +70,28 @@ Abre **Conexiones → Nueva conexión**. **Probar y descubrir bases** valida el 
 
 ### Cloudera: Impala o Hive
 
-Indica el **nombre registrado en CML** (el mismo del widget de conexiones), motor **Impala** o **Hive**, usuario y **Workload Password**. No hace falta una API Key ni enumerar automáticamente las conexiones del usuario. Se usa `cml.data_v1`:
+Indica el **nombre registrado en CML** (el mismo del widget de conexiones) y el motor **Impala** o **Hive**. Después elige la autenticación de **esa conexión**; no hace falta una API Key ni enumerar automáticamente las conexiones del usuario:
+
+| Opción de la app | Cuándo usarla | Llamada a `cml.data_v1` |
+| --- | --- | --- |
+| **Credenciales del runtime (Kerberos / on-premise)** | La conexión CML usa el ticket Kerberos de la identidad que ejecuta la aplicación; por ejemplo `default-impala` en un Workbench on-premise | `get_connection(nombre)` |
+| **Usuario y Workload Password (Cloud / LDAP)** | La conexión registrada acepta usuario y contraseña explícitos | `get_connection(nombre, {"USERNAME": usuario, "PASSWORD": clave})` |
+
+El modo del runtime **no solicita ni almacena** usuario o contraseña para esa conexión. El siguiente ejemplo reproduce el snippet de Cloudera on-premise:
 
 ```python
 import cml.data_v1 as cmldata
 
-conn = cmldata.get_connection(
-    "vast-data-demo",
-    {"USERNAME": "usuario", "PASSWORD": "workload-password"},
-)
+conn = cmldata.get_connection("default-impala")
 try:
     databases = conn.get_pandas_dataframe("SHOW DATABASES")
 finally:
     conn.close()
 ```
 
-La conexión se abre para cada consulta y se cierra al terminar. El motor seleccionado determina si el prompt pide **Impala SQL** o **HiveQL**. A `SHOW`, `DESCRIBE` y `EXPLAIN` no se les añade un `LIMIT` sintácticamente inválido: las filas se limitan en la respuesta.
+Selecciona el modo según la autenticación real de la conexión registrada, no solo según si el despliegue es Cloud u on-premise: un Virtual Warehouse on-premise también puede usar LDAP. Si el modo Kerberos devuelve «No Kerberos credentials available», comprueba que la **identidad que ejecuta la app** dispone de ticket; el indicador verde de tu cuenta personal no cubre una app que se ejecute como cuenta de servicio. [Autenticación de Cloudera AI 1.5.5](https://docs.cloudera.com/machine-learning/1.5.5/site-administration/topics/ml-kerberos.html), [cuentas de servicio](https://docs.cloudera.com/machine-learning/1.5.5/site-administration/topics/ml-service-accounts-auth-hadoop.html).
+
+La conexión se abre para cada consulta y se cierra al terminar. Las conexiones ya guardadas mantienen su método original; para usar otro método, prueba y guarda una nueva conexión y crea un chat asociado a ella. El motor seleccionado determina si el prompt pide **Impala SQL** o **HiveQL**. A `SHOW`, `DESCRIBE` y `EXPLAIN` no se les añade un `LIMIT` sintácticamente inválido: las filas se limitan en la respuesta.
 
 ### PostgreSQL
 
