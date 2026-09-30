@@ -88,7 +88,7 @@ const translations = {
     'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
   }
 };
-for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {});
+for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {}, chartControlTranslations[code] || {});
 const originalText = new WeakMap();
 function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
 function tf(key, values={}) { return t(key).replace(/\{(\w+)\}/g, (_,name)=>String(values[name]??'')); }
@@ -327,11 +327,25 @@ function panelFor(type,result) {
 }
 function bindPanel(node,result) {
   $('.copy-sql',node)?.addEventListener('click',async event=>{try { await navigator.clipboard.writeText(result.sql); event.currentTarget.textContent=t('Copiado ✓'); } catch { toast(t('No se pudo copiar la consulta.'),true); }});
+  bindChartControls(node,result);
   initMap(node,result);
 }
 function highlightSql(sql) { return escapeHtml(sql).replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|ON|GROUP BY|ORDER BY|LIMIT|AS|SUM|COUNT|AVG|ROUND|DESC|ASC)\b/gi,'<span class="kw">$1</span>'); }
 
 const chartColors=['var(--chart-1)','var(--chart-2)','var(--chart-3)','var(--chart-4)','var(--chart-5)','var(--chart-6)'];
+const chartViews=new Map();
+let chartSequence=0;
+function chartView(result) {
+  const key=result.id || result.title;
+  if (!chartViews.has(key)) chartViews.set(key,{xZoom:1,axis:'left',left:null,right:null});
+  return chartViews.get(key);
+}
+function axisNumber(value,span) {
+  if (span>=10000) return compactNumber(value);
+  const step=span/4;
+  const decimals=step>=1?0:Math.min(8,Math.max(1,Math.ceil(-Math.log10(step))+1));
+  return new Intl.NumberFormat(state.uiLanguage,{maximumFractionDigits:decimals}).format(value);
+}
 function chartColor(index) { return chartColors[index] || 'hsl(' + ((index * 137.5) % 360) + ' 68% 50%)'; }
 function chartData(result) {
   const columns=result.columns, rows=result.rows;
@@ -368,12 +382,18 @@ function renderChart(result) {
   const secondary=data.series.length>1 && !stacked ? data.series.map(s=>overallMax/Math.max(...s.values.map(Math.abs),1)>=8) : data.series.map(()=>false);
   const primaryValues=data.series.filter((_,i)=>!secondary[i]).flatMap(s=>s.values);
   const secondaryValues=data.series.filter((_,i)=>secondary[i]).flatMap(s=>s.values);
-  const leftMin=stacked?0:Math.min(0,...primaryValues),leftMax=stacked?Math.max(...data.labels.map((_,i)=>data.series.reduce((sum,s)=>sum+s.values[i],0)),1):Math.max(1,...primaryValues);
-  const rightMin=Math.min(0,...secondaryValues),rightMax=Math.max(1,...secondaryValues);
-  const width=Math.max(680,data.labels.length*46),height=360,left=70,right=secondary.some(Boolean)?74:28,top=50,bottom=85,plotW=width-left-right,plotH=height-top-bottom;
+  const autoLeft=[stacked?0:Math.min(0,...primaryValues),stacked?Math.max(...data.labels.map((_,i)=>data.series.reduce((sum,s)=>sum+s.values[i],0)),1):Math.max(1,...primaryValues)];
+  const autoRight=[Math.min(0,...secondaryValues),Math.max(1,...secondaryValues)];
+  const view=chartView(result),hasSecondary=secondary.some(Boolean);
+  const [leftMin,leftMax]=view.left||autoLeft,[rightMin,rightMax]=view.right||autoRight;
+  const width=Math.max(680,Math.round(data.labels.length*46*view.xZoom)),height=360;
+  const left=Math.max(82,axisNumber(leftMin,leftMax-leftMin).length*6+16,axisNumber(leftMax,leftMax-leftMin).length*6+16);
+  const right=hasSecondary?Math.max(84,axisNumber(rightMin,rightMax-rightMin).length*6+16,axisNumber(rightMax,rightMax-rightMin).length*6+16):28;
+  const top=50,bottom=85,plotW=width-left-right,plotH=height-top-bottom;
   const y=(v,axis)=>{const min=axis?rightMin:leftMin,max=axis?rightMax:leftMax;return top+plotH-(v-min)/(max-min)*plotH;};
   const x=i=>left+plotW*(i+.5)/data.labels.length;
-  const grid=Array.from({length:5},(_,i)=>{const value=leftMin+(leftMax-leftMin)*i/4,yy=y(value,false);return '<g><line class="chart-grid" x1="'+left+'" y1="'+yy+'" x2="'+(left+plotW)+'" y2="'+yy+'"/><text class="chart-axis-label" x="'+(left-9)+'" y="'+(yy+4)+'" text-anchor="end">'+compactNumber(value)+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-label" x="'+(left+plotW+9)+'" y="'+(yy+4)+'">'+compactNumber(rightMin+(rightMax-rightMin)*i/4)+'</text>':'')+'</g>';}).join('');
+  const grid=Array.from({length:5},(_,i)=>{const value=leftMin+(leftMax-leftMin)*i/4,yy=y(value,false);return '<g><line class="chart-grid" x1="'+left+'" y1="'+yy+'" x2="'+(left+plotW)+'" y2="'+yy+'"/><text class="chart-axis-label" x="'+(left-9)+'" y="'+(yy+4)+'" text-anchor="end">'+axisNumber(value,leftMax-leftMin)+'</text>'+(hasSecondary?'<text class="chart-axis-label" x="'+(left+plotW+9)+'" y="'+(yy+4)+'">'+axisNumber(rightMin+(rightMax-rightMin)*i/4,rightMax-rightMin)+'</text>':'')+'</g>';}).join('');
+  const verticalGrid=data.labels.map((_,i)=>'<line class="chart-grid-vertical" x1="'+x(i)+'" y1="'+top+'" x2="'+x(i)+'" y2="'+(top+plotH)+'"/>').join('');
   const labelStep=Math.max(1,Math.ceil(data.labels.length*72/plotW));
   const labels=data.labels.map((label,i)=>i%labelStep===0?'<text class="chart-axis-label" transform="translate('+x(i)+','+(top+plotH+18)+') rotate(-35)" text-anchor="end">'+escapeHtml(label.slice(0,18))+'</text>':'').join('');
   let marks='';
@@ -384,8 +404,45 @@ function renderChart(result) {
     marks=data.labels.map((label,i)=>{let accumulated=0;return data.series.map((s,j)=>{const v=s.values[i],base=stacked?accumulated:0;accumulated+=v;const xx=stacked?x(i)-barW/2:x(i)-barW*data.series.length/2+j*barW,topY=y(base+v,secondary[j]),zeroY=y(base,secondary[j]),yy=Math.min(topY,zeroY),hh=Math.max(1,Math.abs(topY-zeroY));return '<rect class="chart-rect" x="'+xx+'" y="'+yy+'" width="'+Math.max(1,barW-2)+'" height="'+hh+'" rx="2" fill="'+chartColor(j)+'"><title>'+escapeHtml(label+' · '+s.name)+': '+formatValue(v)+'</title></rect>';}).join('');}).join('');
   }
   const legend=data.series.map((s,i)=>'<span><i style="background:'+chartColor(i)+'"></i>'+escapeHtml(s.name)+(secondary[i]?' · '+escapeHtml(t('eje derecho')):'')+'</span>').join('');
-  const svg='<svg class="chart-svg" style="min-width:'+width+'px" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escapeHtml(result.title)+'; eje horizontal '+escapeHtml(data.xcol)+'; '+escapeHtml(data.series.map(s=>s.name).join(', '))+'"><title>'+escapeHtml(result.title)+'</title>'+grid+'<line class="chart-axis" x1="'+left+'" y1="'+top+'" x2="'+left+'" y2="'+(top+plotH)+'"/><line class="chart-axis" x1="'+left+'" y1="'+(top+plotH)+'" x2="'+(left+plotW)+'" y2="'+(top+plotH)+'"/>'+labels+marks+'<text class="chart-axis-title" x="'+left+'" y="22">'+escapeHtml(data.series.filter((_,i)=>!secondary[i]).map(s=>s.name).join(' · '))+'</text>'+(secondary.some(Boolean)?'<text class="chart-axis-title" x="'+(left+plotW)+'" y="22" text-anchor="end">'+escapeHtml(data.series.filter((_,i)=>secondary[i]).map(s=>s.name).join(' · '))+'</text>':'')+'<text class="chart-axis-title" x="'+(left+plotW/2)+'" y="'+(height-5)+'" text-anchor="middle">'+escapeHtml(data.xcol)+'</text></svg>';
-  return '<div class="chart-panel"><div class="chart-legend">'+legend+'</div>'+svg+count+'</div>';
+  const clipId='chart-clip-'+(++chartSequence);
+  const svg='<svg class="chart-svg" style="min-width:'+width+'px" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="'+escapeHtml(result.title)+'; eje horizontal '+escapeHtml(data.xcol)+'; '+escapeHtml(data.series.map(s=>s.name).join(', '))+'"><title>'+escapeHtml(result.title)+'</title><defs><clipPath id="'+clipId+'"><rect x="'+left+'" y="'+top+'" width="'+plotW+'" height="'+plotH+'"/></clipPath></defs>'+verticalGrid+grid+'<line class="chart-axis" x1="'+left+'" y1="'+top+'" x2="'+left+'" y2="'+(top+plotH)+'"/><line class="chart-axis" x1="'+left+'" y1="'+(top+plotH)+'" x2="'+(left+plotW)+'" y2="'+(top+plotH)+'"/>'+labels+'<g clip-path="url(#'+clipId+')">'+marks+'</g><text class="chart-axis-title" x="'+left+'" y="22">'+escapeHtml(data.series.filter((_,i)=>!secondary[i]).map(s=>s.name).join(' · '))+'</text>'+(hasSecondary?'<text class="chart-axis-title" x="'+(left+plotW)+'" y="22" text-anchor="end">'+escapeHtml(data.series.filter((_,i)=>secondary[i]).map(s=>s.name).join(' · '))+'</text>':'')+'<text class="chart-axis-title" x="'+(left+plotW/2)+'" y="'+(height-5)+'" text-anchor="middle">'+escapeHtml(data.xcol)+'</text></svg>';
+  const axis=view.axis==='right'&&hasSecondary?'right':'left';
+  const [shownMin,shownMax]=axis==='right'?[rightMin,rightMax]:[leftMin,leftMax];
+  const controls='<div class="chart-controls"><div class="chart-zoom-group"><span>'+escapeHtml(t('Zoom X'))+'</span><button type="button" data-chart-action="x-out" aria-label="'+escapeHtml(t('Alejar eje X'))+'" '+(view.xZoom<=0.5?'disabled':'')+'>−</button><span class="chart-zoom-value">'+Math.round(view.xZoom*100)+'%</span><button type="button" data-chart-action="x-in" aria-label="'+escapeHtml(t('Acercar eje X'))+'" '+(view.xZoom>=3?'disabled':'')+'>+</button></div><div class="chart-zoom-group"><span>'+escapeHtml(t('Zoom Y'))+'</span><button type="button" data-chart-action="y-out" aria-label="'+escapeHtml(t('Alejar eje Y'))+'">−</button><button type="button" data-chart-action="y-in" aria-label="'+escapeHtml(t('Acercar eje Y'))+'">+</button></div><form class="chart-range-form" novalidate>'+(hasSecondary?'<label class="chart-axis-picker">'+escapeHtml(t('Eje Y'))+'<select name="axis"><option value="left" '+(axis==='left'?'selected':'')+'>'+escapeHtml(t('Principal'))+'</option><option value="right" '+(axis==='right'?'selected':'')+'>'+escapeHtml(t('Secundario'))+'</option></select></label>':'')+'<label>'+escapeHtml(t('Mínimo Y'))+'<input name="minimum" type="number" step="any" required value="'+shownMin+'"></label><label>'+escapeHtml(t('Máximo Y'))+'<input name="maximum" type="number" step="any" required value="'+shownMax+'"></label><button type="submit" class="chart-apply">'+escapeHtml(t('Aplicar rango'))+'</button></form><button type="button" class="chart-reset" data-chart-action="reset">'+escapeHtml(t('Restablecer vista'))+'</button></div>';
+  return '<div class="chart-shell" data-left-min="'+leftMin+'" data-left-max="'+leftMax+'" data-right-min="'+rightMin+'" data-right-max="'+rightMax+'">'+controls+'<p class="chart-control-error" role="status" hidden></p><div class="chart-panel"><div class="chart-legend">'+legend+'</div>'+svg+count+'</div></div>';
+}
+function bindChartControls(node,result) {
+  const shell=$('.chart-shell',node);if(!shell)return;
+  const panel=$('.result-panel',node),view=chartView(result);
+  const redraw=focusTarget=>{
+    const scroller=$('.chart-panel',shell),center=(scroller.scrollLeft+scroller.clientWidth/2)/Math.max(scroller.scrollWidth,1);
+    panel.innerHTML=renderChart(result);
+    bindPanel(node,result);
+    const next=$('.chart-panel',panel);next.scrollLeft=Math.max(0,center*next.scrollWidth-next.clientWidth/2);
+    if(focusTarget)$(focusTarget,panel)?.focus();
+  };
+  $$('[data-chart-action]',shell).forEach(button=>button.addEventListener('click',()=>{
+    const action=button.dataset.chartAction;
+    if(action==='reset') {chartViews.delete(result.id||result.title);redraw('[data-chart-action="reset"]');return;}
+    if(action.startsWith('x-')) view.xZoom=Math.max(0.5,Math.min(3,Number((view.xZoom*(action==='x-in'?1.5:1/1.5)).toFixed(3))));
+    else {
+      const axis=view.axis==='right'?'right':'left',min=Number(shell.dataset[axis+'Min']),max=Number(shell.dataset[axis+'Max']);
+      const span=(max-min)*(action==='y-in'?0.75:1.5),mid=(max+min)/2;
+      view[axis]=[mid-span/2,mid+span/2];
+    }
+    redraw('[data-chart-action="'+action+'"]');
+  }));
+  const form=$('.chart-range-form',shell);
+  form.elements.axis?.addEventListener('change',event=>{view.axis=event.target.value;redraw('.chart-axis-picker select');});
+  form.addEventListener('submit',event=>{
+    event.preventDefault();
+    const minInput=form.elements.minimum,maxInput=form.elements.maximum;
+    const min=Number(minInput.value),max=Number(maxInput.value),error=$('.chart-control-error',shell);
+    const valid=minInput.value.trim()!==''&&maxInput.value.trim()!==''&&Number.isFinite(min)&&Number.isFinite(max)&&min<max;
+    minInput.setAttribute('aria-invalid',String(!valid));maxInput.setAttribute('aria-invalid',String(!valid));
+    if(!valid){error.textContent=t('El mínimo Y debe ser menor que el máximo Y.');error.hidden=false;minInput.focus();return;}
+    view[view.axis]=[min,max];redraw('.chart-range-form input[name="minimum"]');
+  });
 }
 let mapSequence=0;
 function renderMap(result) {

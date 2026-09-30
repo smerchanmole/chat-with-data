@@ -135,7 +135,7 @@ La lista izquierda permite cambiar de chat y consultar de nuevo **preguntas, res
 
 ![Conversación demo con gráfica de dos ejes](docs/screenshots/conversacion.png)
 
-En **Preferencias** eliges los módulos: resumen, tabla, gráfica, mapa y SQL. Las tablas incluyen número de fila. Las gráficas usan todas las filas devueltas (hasta el límite de consulta), agrupan categoría/serie, admiten barras agrupadas o apiladas, líneas, varias series y eje secundario cuando las escalas difieren. El mapa usa Leaflet y OpenStreetMap si hay latitud y longitud; la cartografía requiere acceso a esos recursos externos.
+En **Preferencias** eliges los módulos: resumen, tabla, gráfica, mapa y SQL. Las tablas incluyen número de fila. Las gráficas usan todas las filas devueltas (hasta el límite de consulta), agrupan categoría/serie, admiten barras agrupadas o apiladas, líneas, varias series y eje secundario cuando las escalas difieren. Sus controles permiten ampliar o reducir independientemente los ejes X e Y; puedes desplazar horizontalmente la gráfica para recorrer todos los puntos, fijar los valores mínimo y máximo de Y y restablecer la vista automática. Cuando hay un eje secundario, el selector de eje permite ajustar cada rango por separado. Las guías verticales suaves facilitan relacionar cada posición X con los valores Y. El mapa usa Leaflet y OpenStreetMap si hay latitud y longitud; la cartografía requiere acceso a esos recursos externos.
 
 El panel derecho muestra columnas perfiladas e instrucciones exclusivas del chat, por ejemplo «responde con puntos» o «trata `sale_date` como fecha». El micrófono utiliza el reconocimiento de voz disponible en el navegador; si no lo está, se puede escribir normalmente.
 

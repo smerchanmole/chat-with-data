@@ -13,7 +13,7 @@ const context = {
   compactNumber: value => String(value),
   t: value => value,
 };
-vm.runInNewContext(chartSource + '\nglobalThis.chartData = chartData; globalThis.renderChart = renderChart;', context);
+vm.runInNewContext(chartSource + '\nglobalThis.chartData = chartData; globalThis.renderChart = renderChart; globalThis.chartView = chartView;', context);
 
 test('line chart includes every returned row, beyond the former 20-row cap', () => {
   const result = {
@@ -43,4 +43,41 @@ test('stacked chart includes all groups and sums repeated category pairs', () =>
   assert.equal(data.series.length, 2);
   assert.equal(data.series[1].values[26], 5);
   assert.match(context.renderChart(result), /55 filas representadas/);
+});
+
+test('axis controls preserve all points, add vertical guides and respect custom Y bounds', () => {
+  const result = {
+    id: 'chart-controls', columns: ['month', 'value'],
+    rows: Array.from({length: 30}, (_, index) => ({month: 'month-' + index, value: 100 + index / 10})),
+    chart: 'line', title: 'Detailed evolution',
+  };
+  const original = context.renderChart(result);
+  const view = context.chartView(result);
+  view.xZoom = 2;
+  view.left = [100.5, 101.5];
+  const zoomed = context.renderChart(result);
+  assert.equal((zoomed.match(/<circle class="chart-point"/g) || []).length, 30);
+  assert.equal((zoomed.match(/class="chart-grid-vertical"/g) || []).length, 30);
+  assert.match(zoomed, /data-left-min="100.5" data-left-max="101.5"/);
+  assert.match(zoomed, /value="100.5"/);
+  assert.match(zoomed, /value="101.5"/);
+  assert.match(zoomed, /200%/);
+  assert.match(zoomed, /clip-path="url\(#chart-clip-\d+\)"/);
+  assert.notEqual(original.match(/min-width:(\d+)px/)[1], zoomed.match(/min-width:(\d+)px/)[1]);
+});
+
+test('secondary Y axis has an independent selectable range', () => {
+  const result = {
+    id: 'dual-axis', columns: ['month', 'revenue', 'rate'],
+    rows: [{month: 'Jan', revenue: 1000, rate: 1}, {month: 'Feb', revenue: 2000, rate: 2}],
+    chart: 'line', title: 'Dual axis',
+  };
+  const view = context.chartView(result);
+  view.axis = 'right';
+  view.right = [1.1, 1.9];
+  const html = context.renderChart(result);
+  assert.match(html, /data-right-min="1.1" data-right-max="1.9"/);
+  assert.match(html, /<option value="right" selected>/);
+  assert.match(html, /value="1.1"/);
+  assert.match(html, /value="1.9"/);
 });
