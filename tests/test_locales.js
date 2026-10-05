@@ -24,7 +24,7 @@ const ignoredTemplateText = new Set([
 const templateKeys = [...template.matchAll(/>([^<>]+)</g)]
   .map(match => match[1].trim())
   .filter(key => key && /[A-Za-zÁÉÍÓÚáéíóúñÑ]/.test(key) && !key.includes('document.') && !ignoredTemplateText.has(key));
-const required = [...new Set([...dynamicKeys, ...templateKeys, 'Generación de SQL', 'Validación de SQL', 'Ejecución de SQL'])];
+const required = [...new Set([...dynamicKeys, ...templateKeys, 'Generación de SQL', 'Validación de SQL', 'Ejecución de SQL', 'Cambiar a tema claro', 'Cambiar a tema oscuro'])];
 
 test('every supported language covers all UI copy keys', () => {
   for (const code of languageCodes.filter(code => code !== 'es')) {
@@ -39,4 +39,12 @@ test('all eight languages are offered for app and model responses', () => {
     assert.ok(select, `${id} missing`);
     for (const code of languageCodes) assert.match(select[1], new RegExp(`value="${code}"`));
   }
+});
+
+test('theme toggle is beside the language selector in the top bar', () => {
+  const topbar = template.match(/<header class="topbar">(.*?)<\/header>/s)?.[1];
+  assert.ok(topbar);
+  assert.ok(topbar.indexOf('id="top-language"') < topbar.indexOf('id="top-theme"'));
+  assert.ok(topbar.indexOf('id="top-theme"') < topbar.indexOf('id="context-toggle"'));
+  assert.match(topbar, /id="top-theme"[^>]*aria-pressed="false"/);
 });

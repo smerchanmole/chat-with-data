@@ -88,7 +88,7 @@ const translations = {
     'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
   }
 };
-for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {}, chartControlTranslations[code] || {});
+for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {}, chartControlTranslations[code] || {}, themeControlTranslations[code] || {});
 const originalText = new WeakMap();
 function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
 function tf(key, values={}) { return t(key).replace(/\{(\w+)\}/g, (_,name)=>String(values[name]??'')); }
@@ -124,6 +124,7 @@ function translateStatic() {
   for (const [id,key] of [['context-toggle','Mostrar contexto del chat'],['context-close','Cerrar contexto'],['open-preferences','Preferencias'],['question','Pregunta'],['mic-button','Dictar pregunta'],['send-button','Enviar pregunta'],['top-language','Idioma de la aplicación y las respuestas']]) one(id).setAttribute('aria-label',t(key));
   one('mic-button').title=t('Dictar pregunta');
   one('top-language').value=state.uiLanguage;
+  updateThemeControl();
   document.documentElement.lang=state.uiLanguage;
 }
 
@@ -613,13 +614,26 @@ async function deleteItem(kind,id) {
     await refreshWorkspace();toast(t('Elemento eliminado.'));
   } catch(error) {toast(error.message,true);}
 }
-function savePreferences(event) {
-  event.preventDefault();
-  state.modules=Object.fromEntries($$('[data-module]').map(el=>[el.dataset.module,el.checked]));
-  state.uiTheme=value('ui-theme');
+function updateThemeControl() {
+  const button=one('top-theme'),light=state.uiTheme==='light';
+  const label=t(light?'Cambiar a tema oscuro':'Cambiar a tema claro');
+  button.textContent=light?'☾':'☀';
+  button.setAttribute('aria-label',t('Tema claro'));
+  button.title=label;
+  button.setAttribute('aria-pressed',String(light));
+}
+function applyTheme(theme) {
+  state.uiTheme=theme==='light'?'light':'dark';
   localStorage.setItem('ttd-theme',state.uiTheme);
   document.documentElement.dataset.theme=state.uiTheme;
   document.querySelector('meta[name="theme-color"]').content=state.uiTheme==='light'?'#f3f5f8':'#07111f';
+  one('ui-theme').value=state.uiTheme;
+  updateThemeControl();
+}
+function savePreferences(event) {
+  event.preventDefault();
+  state.modules=Object.fromEntries($$('[data-module]').map(el=>[el.dataset.module,el.checked]));
+  applyTheme(value('ui-theme'));
   applyLanguage(value('ui-language'),value('model-language'));
   one('preferences-dialog').close();toast(t('Preferencias guardadas.'));
 }
@@ -655,6 +669,7 @@ function toggleSpeech() {
 }
 function bindEvents() {
   one('top-language').addEventListener('change',event=>applyLanguage(event.target.value));
+  one('top-theme').addEventListener('click',()=>applyTheme(state.uiTheme==='light'?'dark':'light'));
   $$('[data-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
   one('new-chat').addEventListener('click',openNewChat);
   one('new-connection').addEventListener('click',()=>{setView('connections');one('connection-label').focus();});
@@ -696,7 +711,8 @@ function bindEvents() {
 async function initialize() {
   bindEvents();
   syncClouderaAuthFields();
-  one('ui-theme').value=state.uiTheme;one('ui-language').value=state.uiLanguage;one('model-language').value=state.modelLanguage;one('top-language').value=state.uiLanguage;
+  one('ui-language').value=state.uiLanguage;one('model-language').value=state.modelLanguage;one('top-language').value=state.uiLanguage;
+  applyTheme(state.uiTheme);
   document.documentElement.lang=state.uiLanguage;
   one('chat-stream').innerHTML=welcome();
   translateStatic();setView('chat');

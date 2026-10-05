@@ -141,7 +141,7 @@ El panel derecho muestra columnas perfiladas e instrucciones exclusivas del chat
 
 ### Idiomas y apariencia
 
-El selector de la **esquina superior derecha** cambia inmediatamente el idioma de la interfaz y de las nuevas respuestas. Están disponibles **Español, Català, Euskara, Galego, English, Français, Italiano y Deutsch**. En **Preferencias** puedes elegir por separado idioma de interfaz y respuestas, tema **claro** u **oscuro** y módulos. Las elecciones se recuerdan en el navegador; el dictado usa el idioma de la interfaz.
+En la **esquina superior derecha** están el selector de idioma y, justo a su lado, el botón ☀/☾ para alternar al instante entre los temas **claro** y **oscuro**. Están disponibles **Español, Català, Euskara, Galego, English, Français, Italiano y Deutsch**. En **Preferencias** también puedes elegir por separado idioma de interfaz y respuestas, apariencia y módulos. Las elecciones se recuerdan en el navegador; el dictado usa el idioma de la interfaz.
 
 ![La misma conversación en tema claro e interfaz catalana](docs/screenshots/conversacion-clara-ca.png)
 

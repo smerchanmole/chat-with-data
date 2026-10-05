@@ -118,3 +118,13 @@ const chartControlTranslations = {
   it: {'Zoom X':'Zoom X','Zoom Y':'Zoom Y','Alejar eje X':'Riduci zoom asse X','Acercar eje X':'Ingrandisci asse X','Alejar eje Y':'Riduci zoom asse Y','Acercar eje Y':'Ingrandisci asse Y','Eje Y':'Asse Y','Principal':'Principale','Secundario':'Secondario','Mínimo Y':'Minimo Y','Máximo Y':'Massimo Y','Aplicar rango':'Applica intervallo','Restablecer vista':'Ripristina vista','El mínimo Y debe ser menor que el máximo Y.':'Il minimo Y deve essere inferiore al massimo Y.'},
   de: {'Zoom X':'X-Zoom','Zoom Y':'Y-Zoom','Alejar eje X':'X-Achse herauszoomen','Acercar eje X':'X-Achse hineinzoomen','Alejar eje Y':'Y-Achse herauszoomen','Acercar eje Y':'Y-Achse hineinzoomen','Eje Y':'Y-Achse','Principal':'Primär','Secundario':'Sekundär','Mínimo Y':'Y-Minimum','Máximo Y':'Y-Maximum','Aplicar rango':'Bereich anwenden','Restablecer vista':'Ansicht zurücksetzen','El mínimo Y debe ser menor que el máximo Y.':'Das Y-Minimum muss kleiner als das Y-Maximum sein.'},
 };
+
+const themeControlTranslations = {
+  ca: {'Tema claro':'Tema clar','Cambiar a tema claro':'Canvia al tema clar','Cambiar a tema oscuro':'Canvia al tema fosc'},
+  eu: {'Tema claro':'Gai argia','Cambiar a tema claro':'Aldatu gai argira','Cambiar a tema oscuro':'Aldatu gai ilunera'},
+  gl: {'Tema claro':'Tema claro','Cambiar a tema claro':'Cambiar ao tema claro','Cambiar a tema oscuro':'Cambiar ao tema escuro'},
+  en: {'Tema claro':'Light theme','Cambiar a tema claro':'Switch to light theme','Cambiar a tema oscuro':'Switch to dark theme'},
+  fr: {'Tema claro':'Thème clair','Cambiar a tema claro':'Passer au thème clair','Cambiar a tema oscuro':'Passer au thème sombre'},
+  it: {'Tema claro':'Tema chiaro','Cambiar a tema claro':'Passa al tema chiaro','Cambiar a tema oscuro':'Passa al tema scuro'},
+  de: {'Tema claro':'Helles Design','Cambiar a tema claro':'Zum hellen Design wechseln','Cambiar a tema oscuro':'Zum dunklen Design wechseln'},
+};
