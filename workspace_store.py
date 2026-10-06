@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -12,6 +13,19 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
+
+
+def redact_secrets(message: str, secrets) -> str:
+    """Avoid mistaking placeholder credentials for SQL characters and numbers."""
+    values = sorted({value for value in secrets if isinstance(value, str) and value}, key=len, reverse=True)
+    patterns = [re.escape(value) if len(value) >= 8 else r"(?<!\w)" + re.escape(value) + r"(?!\w)" for value in values if len(value) > 2]
+    short = [re.escape(value) for value in values if len(value) <= 2]
+    if short:
+        prefix = r'''(?i:\bBearer\s+|\b(?:token|password|workload[_ -]?password|api[_ -]?key(?:[_ -]?(?:id|value))?|key|value)["']?\s*[:=]\s*["']?|://[^\s/:]+:)'''
+        patterns.append(r"(?P<credential_prefix>" + prefix + r")(?:" + "|".join(short) + r")(?!\w)")
+    def replace(match):
+        return (match.groupdict().get("credential_prefix") or "") + "[oculto]"
+    return re.sub("|".join(patterns), replace, message) if patterns else message
 
 
 def load_or_create_key(path: Path, factory) -> str:
@@ -357,24 +371,21 @@ class WorkspaceStore:
             chat["instructions"] = instructions
             return self._chat_view(chat)
 
-    def redact_error(self, session_id: str, message: str) -> str:
+    def redact_error(self, session_id: str, message: str, extra_secrets=()) -> str:
         with self.lock:
             # Error reporting must never initialize/profile a workspace: doing so
             # can query the same unavailable connector and mask the first failure.
             space = self.sessions.get(session_id, {"connections": {}, "models": {}})
+            secrets = list(extra_secrets)
             for item in space["connections"].values():
                 spec = item.get("spec", {})
                 for key in ("password", "workload_password"):
-                    secret = spec.get(key)
-                    if isinstance(secret, str) and secret:
-                        message = message.replace(secret, "[oculto]")
+                    secrets.append(spec.get(key))
             for item in space["models"].values():
                 config = item.get("config", {})
                 for key in ("token", "api_key_value", "api_key_id"):
-                    secret = config.get(key)
-                    if isinstance(secret, str) and secret:
-                        message = message.replace(secret, "[oculto]")
-        return message
+                    secrets.append(config.get(key))
+        return redact_secrets(message, secrets)
 
     def delete(self, session_id: str, kind: str, item_id: str) -> None:
         space = self._space(session_id)

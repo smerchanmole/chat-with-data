@@ -46,7 +46,7 @@ from werkzeug.serving import make_server
 
 from data_connector import DataCatalog
 from llm_client import LLMClient
-from workspace_store import WorkspaceStore, load_or_create_key
+from workspace_store import WorkspaceStore, load_or_create_key, redact_secrets
 
 
 def resolve_base_dir(file_name=None, working_directory=None):
@@ -116,11 +116,10 @@ def redact_diagnostic(text):
         elif isinstance(value, list):
             for item in value:
                 yield from secrets_in(item)
-    for secret in secrets_in(payload):
-        text = text.replace(secret, "[oculto]")
+    secrets = list(secrets_in(payload))
     if session.get("conversation_id"):
-        text = workspaces.redact_error(session["conversation_id"], text)
-    return text
+        return workspaces.redact_error(session["conversation_id"], text, secrets)
+    return redact_secrets(text, secrets)
 
 
 def ok(data=None, **extra):
@@ -207,22 +206,7 @@ def handle_error(exc):
         return jsonify(diagnostic), 422 if isinstance(exc, QueryFailure) else 500
     status = 400 if isinstance(exc, (ValueError, RuntimeError)) else 500
     message = str(exc) if status == 400 else "Error interno al procesar la petición. Inténtalo de nuevo."
-    payload = request.get_json(silent=True) if request.is_json else None
-    if isinstance(payload, dict):
-        def secrets_in(value):
-            if isinstance(value, dict):
-                for key, item in value.items():
-                    if key.lower() in {"password", "workload_password", "token", "api_key_value"} and isinstance(item, str) and len(item) > 2:
-                        yield item
-                    else:
-                        yield from secrets_in(item)
-            elif isinstance(value, list):
-                for item in value:
-                    yield from secrets_in(item)
-        for secret in secrets_in(payload):
-            message = message.replace(secret, "[oculto]")
-    if "conversation_id" in session:
-        message = workspaces.redact_error(session["conversation_id"], message)
+    message = redact_diagnostic(message)
     cause = redact_diagnostic(cause_details(exc))
     app.logger.error("Talk to Data request failure: %s", redact_diagnostic("".join(traceback.format_exception(type(exc), exc, exc.__traceback__))))
     return jsonify({"ok": False, "error": message, "cause": cause}), status

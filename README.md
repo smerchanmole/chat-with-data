@@ -163,6 +163,8 @@ El diagnóstico incluye **Respuesta del modelo** (su texto original, antes de in
 
 Cada fallo tiene una **Referencia** (`trace_id`), también guardada en el historial. En el log de la aplicación de Cloudera busca `Talk to Data query failure` o esa referencia: encontrarás el motor, conexión, etapa, respuesta del modelo, SQL generada/enviada, causa y traceback de Python. Se emite por el logger de Flask a la salida de errores estándar, sin necesitar un fichero de log adicional. Las contraseñas y claves conocidas se ocultan tanto en pantalla como en el historial y en el log. El diagnóstico no vuelve a consultar la base al informar de un fallo.
 
+Si aparece `Object of type Decimal is not JSON serializable` en **Preparación de resultados**, la consulta ya terminó: el problema está en convertir los datos, no en la SQL generada. Los conectores de PostgreSQL, Cloudera (Impala/Hive) y Trino normalizan ahora los resultados antes de mostrar, graficar y guardar: `Decimal` se convierte a número, fechas a texto ISO y valores ausentes/no finitos a `null`. Los números se representan con la precisión de punto flotante usada por las gráficas del navegador. La ocultación de credenciales cortas respeta palabras, números SQL e identificadores de traza; los valores de uno o dos caracteres solo se ocultan cuando aparecen en un contexto de credenciales, como `Bearer` o `password=`.
+
 Si Impala falla más que PostgreSQL, comprueba el motor seleccionado, la base y la tabla, y si las funciones SQL generadas existen en ese dialecto. La causa y la sentencia ayudan a separar sintaxis de permisos o conectividad.
 
 ## Seguridad y persistencia

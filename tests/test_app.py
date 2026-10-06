@@ -1,5 +1,8 @@
 import unittest
 import sys
+import json
+from decimal import Decimal
+from datetime import date
 from types import ModuleType
 from unittest.mock import Mock, patch
 
@@ -163,6 +166,52 @@ class TalkToDataTests(unittest.TestCase):
                 self.assertEqual(error["model_response"], raw)
                 self.assertEqual(error["sql_sent"], "")
                 query.assert_not_called()
+
+    def test_impala_decimal_results_can_be_displayed_and_saved(self):
+        import pandas as pd
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        connection = {"spec": {"engine": "cloudera", "dialect": "impala", "name": "default-impala"}, "profiles": []}
+        raw = json.dumps({"sql": "SELECT municipio, precio_gasoleo_a FROM gasprices_final ORDER BY precio_gasoleo_a DESC LIMIT 10", "title": "Diésel", "chart": "bar"})
+        frame = pd.DataFrame({"municipio": ["Madrid", "Vigo"], "precio_gasoleo_a": [Decimal("1.789"), Decimal("1.650")]})
+        with patch.object(workspaces, "binding", return_value=(chat, connection, {"config": {}})), \
+             patch.object(llm, "complete", return_value=raw), patch.object(catalog, "_cml_query", return_value=frame):
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Diésel más caro"})
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()["data"]
+        self.assertEqual(data["rows"][0]["precio_gasoleo_a"], 1.789)
+        self.assertEqual(data["chart"], "bar")
+        saved = self.client.get(f"/api/workspace/chats/{chat['id']}").get_json()["data"]["messages"][-1]
+        self.assertEqual(saved["rows"], data["rows"])
+        self.assertEqual(saved["sql"], json.loads(raw)["sql"])
+
+    def test_all_connectors_normalize_decimal_dates_and_null_values(self):
+        import pandas as pd
+        import numpy as np
+        values = (Decimal("1.789"), date(2026, 10, 6), float("nan"), np.int64(10), None)
+        columns = ["price", "day", "missing", "count", "empty"]
+        expected = {"price": 1.789, "day": "2026-10-06", "missing": None, "count": 10, "empty": None}
+        cases = [
+            ({"engine": "cloudera", "dialect": "impala"}, "_cml_query", pd.DataFrame([values], columns=columns)),
+            ({"engine": "cloudera", "dialect": "hive"}, "_cml_query", pd.DataFrame([values], columns=columns)),
+            ({"engine": "postgresql", "database": "test"}, "_postgres_rows", {"columns": columns, "rows": [values]}),
+            ({"engine": "trino", "jdbc_url": "jdbc:trino://test"}, "_trino_rows", {"columns": columns, "rows": [values]}),
+        ]
+        for spec, method, result in cases:
+            with self.subTest(engine=spec), patch.object(catalog, method, return_value=result):
+                normalized = catalog.query(spec, "SELECT * FROM prices LIMIT 10")
+                self.assertEqual(normalized["rows"], [expected])
+                json.dumps(normalized, allow_nan=False)
+
+    def test_short_credentials_do_not_corrupt_sql_error_or_trace_id(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        with patch("app.choose_chart", side_effect=TypeError("Object of type Decimal is not JSON serializable. Authorization: Bearer a; key=1")):
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Ventas", "token": "a", "api_key_value": "1"})
+        error = response.get_json()
+        self.assertIn("Object of type Decimal is not JSON serializable", error["cause"])
+        self.assertIn("Bearer [oculto]; key=[oculto]", error["cause"])
+        self.assertRegex(error["trace_id"], r"^[a-f0-9]{32}$")
+        self.assertIn("sale_date", error["sql_sent"])
+        self.assertNotIn("[oculto]", error["model_response"])
 
     def test_connection_is_saved_only_after_discovery_and_profile(self):
         spec = {"engine": "cloudera", "name": "vast-data-demo", "username": "analyst", "workload_password": "secret"}

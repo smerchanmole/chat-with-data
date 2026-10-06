@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import math
 from datetime import date, datetime
 from decimal import Decimal
 from dataclasses import dataclass
@@ -113,18 +114,19 @@ class DataCatalog:
                 cursor = conn.execute(bounded)
                 rows = [dict(row) for row in cursor.fetchmany(limit + 1)]
                 columns = [item[0] for item in cursor.description or []]
-            return {"columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit}
+            return self._json_value({"columns": columns, "rows": rows[:limit], "truncated": len(rows) > limit})
         if spec.get("engine") == "postgresql":
             result = self._postgres_rows(spec, spec.get("active_database") or spec["database"], bounded)
             columns = result["columns"]
-            rows = [dict(zip(columns, (self._json_value(value) for value in row))) for row in result["rows"][:limit]]
-            return {"columns": columns, "rows": rows, "truncated": len(rows) >= limit}
+            rows = [dict(zip(columns, row)) for row in result["rows"][:limit]]
+            return self._json_value({"columns": columns, "rows": rows, "truncated": len(rows) >= limit})
         if spec.get("jdbc_url"):
             result = self._trino_rows(spec, bounded)
-            return {"columns": result["columns"], "rows": [dict(zip(result["columns"], row)) for row in result["rows"][:limit]], "truncated": len(result["rows"]) >= limit}
+            return self._json_value({"columns": result["columns"], "rows": [dict(zip(result["columns"], row)) for row in result["rows"][:limit]], "truncated": len(result["rows"]) >= limit})
         frame = self._cml_query(spec, bounded)
-        frame = frame.where(frame.notna(), None)
-        return {"columns": list(frame.columns), "rows": frame.head(limit).to_dict(orient="records"), "truncated": len(frame) >= limit}
+        records = frame.head(limit).astype(object)
+        records = records.where(records.notna(), None)
+        return self._json_value({"columns": list(frame.columns), "rows": records.to_dict(orient="records"), "truncated": len(frame) >= limit})
 
     @classmethod
     def prepare_query_sql(cls, sql: str, limit: int = 500) -> str:
@@ -254,13 +256,30 @@ class DataCatalog:
             params["sslmode"] = query["sslmode"][0]
         return params
 
-    @staticmethod
-    def _json_value(value: Any) -> Any:
+    @classmethod
+    def _json_value(cls, value: Any) -> Any:
+        """Normalize connector values before charting, persistence and JSON replies."""
+        if isinstance(value, dict):
+            return {str(key): cls._json_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._json_value(item) for item in value]
         if isinstance(value, Decimal):
-            return float(value)
+            if not value.is_finite():
+                return None
+            numeric = float(value)
+            return numeric if math.isfinite(numeric) else str(value)
         if isinstance(value, (date, datetime)):
             return value.isoformat()
-        return value
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
+        if value is None or isinstance(value, (str, int, bool)):
+            return value
+        # NumPy scalars returned by dataframes expose their Python value here.
+        if callable(getattr(value, "item", None)):
+            return cls._json_value(value.item())
+        if isinstance(value, bytes):
+            return value.hex()
+        return str(value)
 
     @staticmethod
     def _identifier(value: str) -> str:

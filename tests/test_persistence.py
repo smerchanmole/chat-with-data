@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from workspace_store import WorkspaceStore, load_or_create_key
+from workspace_store import WorkspaceStore, load_or_create_key, redact_secrets
 
 
 PROFILE = {"table": "sales", "sample_rows": 1, "columns": [
@@ -90,6 +90,15 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(load_or_create_key(path, lambda: "second"), "first")
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         self.assertEqual(os.stat(self.runtime / "workspace.key").st_mode & 0o777, 0o600)
+
+    def test_redaction_preserves_identifiers_with_short_credentials(self):
+        source = 'Decimal JSON serializable impala SELECT provincia, precio_gasoleo_a LIMIT 10 c01adc1c2676a42a2b4aa70c2db11da74'
+        self.assertEqual(redact_secrets(source, ["a", "1"]), source)
+        self.assertEqual(redact_secrets('token="a" value="1" secret=very-private-token', ["a", "1", "very-private-token"]),
+                         'token="[oculto]" value="[oculto]" secret=[oculto]')
+        self.store.listing("browser-a")
+        self.store.sessions["browser-a"]["models"]["test"] = {"config": {"api_key_id": "a", "api_key_value": "1"}}
+        self.assertEqual(self.store.redact_error("browser-a", source), source)
 
     def test_plaintext_history_is_migrated_without_losing_messages(self):
         chat = self.store.create_chat("browser-a", "demo", "demo")
