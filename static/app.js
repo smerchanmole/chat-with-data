@@ -88,7 +88,7 @@ const translations = {
     'La IA puede cometer errores. Revisa la consulta SQL antes de tomar decisiones.':'L’IA peut se tromper. Vérifiez la requête SQL avant de décider.','tablas':'tables','columnas perfiladas':'colonnes profilées','distintos':'distincts','Eliminar':'Supprimer','Modelo de demostración':'Modèle de démonstration','Modelo local de demostración':'Modèle de démonstration local','Modelo eliminado':'Modèle supprimé','Crea primero una conexión y un modelo.':'Créez d’abord une connexion et un modèle.','El modelo de demostración solo admite datos demo. Prueba y guarda un modelo para esta conexión.':'Le modèle de démonstration accepte seulement les données de démonstration. Testez et enregistrez un modèle pour cette connexion.'
   }
 };
-for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {}, chartControlTranslations[code] || {}, themeControlTranslations[code] || {});
+for (const code of languages) translations[code] = Object.assign({}, translations[code] || {}, extraTranslations[code] || {}, dynamicTranslations[code] || {}, supplementalTranslations[code] || {}, errorTranslations[code] || {}, accessibilityTranslations[code] || {}, clouderaAuthTranslations[code] || {}, chartControlTranslations[code] || {}, themeControlTranslations[code] || {}, diagnosticTranslations[code] || {});
 const originalText = new WeakMap();
 function t(key) { return (translations[state.uiLanguage]||{})[key]||key; }
 function tf(key, values={}) { return t(key).replace(/\{(\w+)\}/g, (_,name)=>String(values[name]??'')); }
@@ -136,7 +136,7 @@ async function api(path, options = {}) {
   const payload = await response.json().catch(() => ({ok:false,error:t('Respuesta no válida del servidor.')}));
   if (!response.ok || !payload.ok) {
     const error=new Error(t(payload.error || 'Error ' + response.status));
-    error.cause=payload.cause||'';error.sql=payload.sql||'';error.stage=payload.stage||'';
+    for(const key of ['cause','sql','stage','model_response','generated_sql','sql_sent','trace_id','engine','connection']) error[key]=payload[key]||'';
     throw error;
   }
   return payload.data;
@@ -268,11 +268,16 @@ function appendTyping() {
 }
 function renderError(input) {
   const error=typeof input==='string'?{message:input}:input;
-  const stage={generation:'Generación de SQL',validation:'Validación de SQL',execution:'Ejecución de SQL'}[error.stage]||'';
+  const stage={binding:'Preparación del chat',generation:'Generación de SQL',validation:'Validación de SQL',execution:'Ejecución de SQL',processing:'Preparación de resultados'}[error.stage]||'';
   const node = document.createElement('div'); node.className = 'message assistant-message';
-  node.innerHTML = '<div class="assistant-avatar">!</div><div class="answer-body query-error"><h3>'+escapeHtml(t(error.error||error.message||'No pude completar el análisis'))+'</h3>'+(stage?'<span class="error-stage">'+escapeHtml(t(stage))+'</span>':'')+(error.cause?'<p><strong>'+escapeHtml(t('Causa:'))+'</strong> '+escapeHtml(error.cause)+'</p>':'')+(error.sql?'<details open><summary>'+escapeHtml(t('SQL que se intentó ejecutar'))+'</summary><div class="sql-panel"><button type="button" class="copy-error-sql">'+escapeHtml(t('Copiar SQL'))+'</button><pre>'+highlightSql(error.sql)+'</pre></div></details>':'')+(!error.cause&&!error.sql?'<p>'+escapeHtml(error.message||'')+'</p>':'')+'</div>';
+  const sent=error.sql_sent || (error.stage==='execution'?error.sql:'');
+  const sql=sent||error.generated_sql||error.sql||'';
+  const hasTrace=Boolean(error.trace_id||error.model_response||error.sql);
+  const modelDetail=hasTrace?'<details open><summary>'+escapeHtml(t('Respuesta del modelo:'))+'</summary><pre class="model-error-response">'+escapeHtml(error.model_response||t('No se recibió una respuesta del modelo.'))+'</pre></details>':'';
+  const sqlDetail=sql?'<details open><summary>'+escapeHtml(t(sent?'SQL enviada al motor:':'SQL generada (no enviada):'))+'</summary><div class="sql-panel"><button type="button" class="copy-error-sql">'+escapeHtml(t('Copiar SQL'))+'</button><pre>'+highlightSql(sql)+'</pre></div></details>':hasTrace?'<p>'+escapeHtml(t('No se envió SQL al motor.'))+'</p>':'';
+  node.innerHTML = '<div class="assistant-avatar">!</div><div class="answer-body query-error"><h3>'+escapeHtml(t(error.error||error.message||'No pude completar el análisis'))+'</h3>'+(stage?'<span class="error-stage">'+escapeHtml(t(stage))+'</span>':'')+'<p><strong>'+escapeHtml(t('Error:'))+'</strong> '+escapeHtml(error.cause||error.message||error.error||'')+'</p>'+modelDetail+sqlDetail+(error.trace_id?'<p class="error-trace"><strong>'+escapeHtml(t('Referencia:'))+'</strong> <code>'+escapeHtml(error.trace_id)+'</code>'+(error.engine?' · '+escapeHtml(error.engine):'')+'</p>':'')+'</div>';
   one('chat-stream').append(node); scrollChat();
-  $('.copy-error-sql',node)?.addEventListener('click',async event=>{try{await navigator.clipboard.writeText(error.sql);event.currentTarget.textContent=t('Copiado ✓');}catch{toast(t('No se pudo copiar la consulta.'),true);}});
+  $('.copy-error-sql',node)?.addEventListener('click',async event=>{try{await navigator.clipboard.writeText(sql);event.currentTarget.textContent=t('Copiado ✓');}catch{toast(t('No se pudo copiar la consulta.'),true);}});
 }
 function scrollChat() { requestAnimationFrame(() => { one('chat-stream').scrollTop = one('chat-stream').scrollHeight; }); }
 function resizeComposer() { const el=one('question'); el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
@@ -296,6 +301,7 @@ async function ask(question) {
     typing.remove();
     if (state.chatId === chatId) {
       const failed = {kind:'error',question,error:error.message,cause:error.cause||'',sql:error.sql||'',stage:error.stage||''};
+      for(const key of ['model_response','generated_sql','sql_sent','trace_id','engine','connection']) failed[key]=error[key]||'';
       state.chat?.messages.push(failed);
       renderError(failed);
     }

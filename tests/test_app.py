@@ -11,6 +11,7 @@ from app import (
     llm,
     resolve_base_dir,
     resolve_bindings,
+    workspaces,
 )
 
 
@@ -83,6 +84,85 @@ class TalkToDataTests(unittest.TestCase):
         error = response.get_json()
         self.assertEqual(error["stage"], "validation")
         self.assertIn("DELETE FROM sales", error["sql"])
+        self.assertEqual(error["sql_sent"], "")
+
+    def test_impala_failure_keeps_model_response_sql_and_redacted_log(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        connection = {"spec": {"engine": "cloudera", "dialect": "impala", "name": "default-impala"}, "profiles": []}
+        model = {"config": {"model": "test"}}
+        raw = '{"sql":"SELECT bad_column FROM sales", "title":"trace", "summary_hint":"private-token", "chart":"none"}'
+        with patch.object(workspaces, "binding", return_value=(chat, connection, model)), \
+             patch.object(llm, "complete", return_value=raw) as complete, \
+             patch.object(catalog, "query", side_effect=RuntimeError("AnalysisException: bad_column private-token")) as query, \
+             self.assertLogs(app.logger, level="ERROR") as logs:
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Ventas", "token": "private-token"})
+        error = response.get_json()
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(error["engine"], "impala")
+        self.assertEqual(error["connection"], "default-impala")
+        self.assertEqual(error["sql_sent"], query.call_args.args[1])
+        self.assertEqual(error["generated_sql"], "SELECT bad_column FROM sales")
+        self.assertIn('"sql":"SELECT bad_column FROM sales"', error["model_response"])
+        self.assertIn("Impala SQL", complete.call_args.args[1][0]["content"])
+        self.assertIn(error["trace_id"], "\n".join(logs.output))
+        self.assertIn("Traceback", "\n".join(logs.output))
+        self.assertNotIn("private-token", str(error) + "\n".join(logs.output))
+        saved = self.client.get(f"/api/workspace/chats/{chat['id']}").get_json()["data"]["messages"][-1]
+        self.assertEqual(saved["model_response"], error["model_response"])
+        self.assertEqual(saved["trace_id"], error["trace_id"])
+
+    def test_invalid_model_json_keeps_raw_response_without_sending_sql(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        connection = {"spec": {"engine": "cloudera", "dialect": "impala"}, "profiles": []}
+        with patch.object(workspaces, "binding", return_value=(chat, connection, {"config": {}})), \
+             patch.object(llm, "complete", return_value="No puedo devolver JSON"), \
+             patch.object(catalog, "query") as query:
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Ventas"})
+        error = response.get_json()
+        self.assertEqual(error["stage"], "generation")
+        self.assertEqual(error["model_response"], "No puedo devolver JSON")
+        self.assertIn("JSONDecodeError", error["cause"])
+        self.assertEqual(error["sql_sent"], "")
+        query.assert_not_called()
+
+    def test_result_processing_failure_has_diagnostics_and_persistent_history(self):
+        chat = self.client.post("/api/workspace/chats", json={"connection_id": "demo", "model_id": "demo"}).get_json()["data"]
+        with patch("app.choose_chart", side_effect=TypeError("Unsupported numeric result")):
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Ingresos por mes"})
+        error = response.get_json()
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(error["stage"], "processing")
+        self.assertIn("TypeError: Unsupported numeric result", error["cause"])
+        self.assertIn("SELECT", error["sql_sent"])
+        self.assertIn('"sql"', error["model_response"])
+        saved = self.client.get(f"/api/workspace/chats/{chat['id']}").get_json()["data"]["messages"][-1]
+        self.assertEqual(saved["trace_id"], error["trace_id"])
+
+    def test_legacy_ask_also_reports_real_error_and_sent_sql(self):
+        with patch.object(catalog, "query", side_effect=RuntimeError("Impala syntax error")) as query:
+            response = self.client.post("/api/ask", json={"connection": "talk-to-data-demo", "tables": ["sales"], "profiles": [{}], "question": "Ventas"})
+        error = response.get_json()
+        self.assertEqual(error["stage"], "execution")
+        self.assertEqual(error["sql_sent"], query.call_args.args[1])
+        self.assertIn("Impala syntax error", error["cause"])
+        self.assertIn('"sql"', error["model_response"])
+
+    def test_model_http_errors_and_unexpected_payloads_keep_response_body(self):
+        for status, body in ((400, {"error": "Unsupported response_format"}), (200, {"unexpected": "payload"})):
+            with self.subTest(status=status):
+                raw = str(body)
+                upstream = Mock(status_code=status, text=raw)
+                upstream.json.return_value = body
+                with patch("llm_client.requests.post", return_value=upstream), patch.object(catalog, "query") as query:
+                    response = self.client.post("/api/ask", json={
+                        "connection": "talk-to-data-demo", "tables": ["sales"], "profiles": [{}], "question": "Ventas",
+                        "model": {"endpoint": "https://example.test/v1/chat/completions", "model": "test/model"},
+                    })
+                error = response.get_json()
+                self.assertEqual(error["stage"], "generation")
+                self.assertEqual(error["model_response"], raw)
+                self.assertEqual(error["sql_sent"], "")
+                query.assert_not_called()
 
     def test_connection_is_saved_only_after_discovery_and_profile(self):
         spec = {"engine": "cloudera", "name": "vast-data-demo", "username": "analyst", "workload_password": "secret"}

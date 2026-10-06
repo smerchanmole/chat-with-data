@@ -15,8 +15,15 @@ class LLMClient:
             payload["response_format"] = {"type": "json_object"}
         response = requests.post(endpoint, headers=headers, json=payload, timeout=90)
         self._ensure_success(response, endpoint, model)
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+        try:
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("El modelo no devolvió contenido de texto.")
+            return content
+        except Exception as exc:
+            exc.model_response = response.text
+            raise
 
     def resolve(self, config: dict[str, Any]):
         endpoint = self.normalize_endpoint(str(config.get("endpoint", "")))
@@ -80,9 +87,14 @@ class LLMClient:
             hint = "La credencial no está autorizada para este endpoint."
         else:
             hint = "El endpoint rechazó la petición."
-        raise RuntimeError(f"{hint} HTTP {response.status_code} en {endpoint}. Detalle: {detail}")
+        error = RuntimeError(f"{hint} HTTP {response.status_code} en {endpoint}. Detalle: {detail}")
+        error.model_response = response.text or detail
+        raise error
 
     @staticmethod
     def parse_json(text: str) -> dict[str, Any]:
         cleaned = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.I).strip()
-        return json.loads(cleaned)
+        plan = json.loads(cleaned)
+        if not isinstance(plan, dict):
+            raise ValueError("La respuesta del modelo debe ser un objeto JSON.")
+        return plan

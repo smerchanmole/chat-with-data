@@ -358,19 +358,21 @@ class WorkspaceStore:
             return self._chat_view(chat)
 
     def redact_error(self, session_id: str, message: str) -> str:
-        space = self._space(session_id)
         with self.lock:
+            # Error reporting must never initialize/profile a workspace: doing so
+            # can query the same unavailable connector and mask the first failure.
+            space = self.sessions.get(session_id, {"connections": {}, "models": {}})
             for item in space["connections"].values():
                 spec = item.get("spec", {})
                 for key in ("password", "workload_password"):
                     secret = spec.get(key)
-                    if isinstance(secret, str) and len(secret) > 2:
+                    if isinstance(secret, str) and secret:
                         message = message.replace(secret, "[oculto]")
             for item in space["models"].values():
                 config = item.get("config", {})
-                for key in ("token", "api_key_value"):
+                for key in ("token", "api_key_value", "api_key_id"):
                     secret = config.get(key)
-                    if isinstance(secret, str) and len(secret) > 2:
+                    if isinstance(secret, str) and secret:
                         message = message.replace(secret, "[oculto]")
         return message
 

@@ -149,15 +149,19 @@ Los mensajes y análisis **ya generados** permanecen como se guardaron: cambiar 
 
 ## Diagnóstico de errores
 
-Si una pregunta falla, la pregunta y su error quedan en el historial. La tarjeta distingue tres etapas:
+Si una pregunta falla, la pregunta y su diagnóstico quedan en el historial del chat. La tarjeta distingue estas etapas:
 
 | Etapa | Qué significa | Qué comprobar |
 | --- | --- | --- |
+| **Preparación del chat** | No se pudo recuperar su conexión o modelo | Recursos asociados al chat |
 | **Generación de SQL** | Falló el modelo o su respuesta JSON | Endpoint, Model ID, token, disponibilidad |
 | **Validación de SQL** | La propuesta incumple reglas de solo lectura o sintaxis admitida | Pregunta, instrucciones, SQL propuesto |
 | **Ejecución de SQL** | La base rechazó o no completó la consulta | Dialecto, tablas, columnas, permisos, tipos |
+| **Preparación de resultados** | La consulta terminó, pero falló la preparación de la respuesta | Tipo de dato devuelto, resumen y visualización |
 
-Junto al error aparece la **causa original del conector** —por ejemplo, un `AnalysisException` de Impala— y, si hubo SQL, la **sentencia exacta intentada**, resaltada y copiable. Así puedes reproducirla fuera de la app. Las credenciales guardadas se ocultan de las causas y del SQL mostrado.
+El diagnóstico incluye **Respuesta del modelo** (su texto original, antes de interpretar el JSON, o el cuerpo HTTP si el endpoint rechazó la petición), **SQL enviada al motor** (la consulta preparada, incluido el límite de filas) y **Error** (tipo de excepción, descripción y causas encadenadas). Si la validación impidió ejecutar la consulta, se muestra como **SQL generada (no enviada)**. Si el modelo no respondió o no se llegó a consultar la base, la tarjeta lo indica explícitamente. La SQL está resaltada y es copiable; el texto del modelo se muestra literalmente, sin ejecutar HTML.
+
+Cada fallo tiene una **Referencia** (`trace_id`), también guardada en el historial. En el log de la aplicación de Cloudera busca `Talk to Data query failure` o esa referencia: encontrarás el motor, conexión, etapa, respuesta del modelo, SQL generada/enviada, causa y traceback de Python. Se emite por el logger de Flask a la salida de errores estándar, sin necesitar un fichero de log adicional. Las contraseñas y claves conocidas se ocultan tanto en pantalla como en el historial y en el log. El diagnóstico no vuelve a consultar la base al informar de un fallo.
 
 Si Impala falla más que PostgreSQL, comprueba el motor seleccionado, la base y la tabla, y si las funciones SQL generadas existen en ese dialecto. La causa y la sentencia ayudan a separar sintaxis de permisos o conectividad.
 

@@ -35,11 +35,12 @@ import os
 import re
 import secrets
 import time
+import traceback
 import uuid
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, g, jsonify, render_template, request, session
 from werkzeug.exceptions import HTTPException
 from werkzeug.serving import make_server
 
@@ -89,11 +90,37 @@ def cause_details(exc: Exception) -> str:
     current = exc
     while current is not None and id(current) not in seen and len(details) < 4:
         seen.add(id(current))
-        message = str(current).strip() or type(current).__name__
+        message = f"{type(current).__name__}: {str(current).strip()}"
         if message not in details:
             details.append(message)
         current = current.__cause__ or current.__context__
-    return " | ".join(details)[:2000]
+    return " | ".join(details)[:12000]
+
+
+def begin_query_trace():
+    g.query_trace = {"trace_id": uuid.uuid4().hex, "stage": "binding", "model_response": "",
+                     "generated_sql": "", "sql_sent": "", "engine": "", "connection": ""}
+    return g.query_trace
+
+
+def redact_diagnostic(text):
+    """Apply the same credential redaction to browser, history and stderr."""
+    payload = request.get_json(silent=True) if request.is_json else None
+    def secrets_in(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key.lower() in {"password", "workload_password", "token", "api_key_value", "api_key_id"} and isinstance(item, str) and item:
+                    yield item
+                else:
+                    yield from secrets_in(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from secrets_in(item)
+    for secret in secrets_in(payload):
+        text = text.replace(secret, "[oculto]")
+    if session.get("conversation_id"):
+        text = workspaces.redact_error(session["conversation_id"], text)
+    return text
 
 
 def ok(data=None, **extra):
@@ -156,14 +183,28 @@ def ensure_session():
 def handle_error(exc):
     if isinstance(exc, HTTPException):
         return jsonify({"ok": False, "error": exc.description}), exc.code
-    if isinstance(exc, QueryFailure):
-        session_id = session.get("conversation_id", "")
-        cause = cause_details(exc.cause)
-        sql = exc.sql
-        if session_id:
-            cause = workspaces.redact_error(session_id, cause)
-            sql = workspaces.redact_error(session_id, sql)
-        return jsonify({"ok": False, "error": str(exc), "cause": cause, "sql": sql, "stage": exc.stage}), 422
+    trace = getattr(g, "query_trace", None)
+    if trace is not None or isinstance(exc, QueryFailure):
+        trace = dict(trace or {})
+        cause = exc.cause if isinstance(exc, QueryFailure) else exc
+        trace["stage"] = exc.stage if isinstance(exc, QueryFailure) else trace.get("stage", "processing")
+        trace["model_response"] = trace.get("model_response") or getattr(cause, "model_response", "")
+        trace["sql"] = trace.get("sql_sent") or trace.get("generated_sql") or getattr(exc, "sql", "")
+        trace["cause"] = cause_details(cause)
+        trace = {key: redact_diagnostic(str(value)) for key, value in trace.items()}
+        diagnostic = {"ok": False, "error": "No se pudo completar la pregunta.", **trace}
+        stack = redact_diagnostic("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+        app.logger.error("Talk to Data query failure %s\n%s", json.dumps(trace, ensure_ascii=False), stack)
+        chat_id = getattr(g, "trace_chat_id", None)
+        if chat_id:
+            try:
+                workspaces.add_message(session["conversation_id"], chat_id, {
+                    **diagnostic, "id": uuid.uuid4().hex[:10], "kind": "error",
+                    "question": getattr(g, "trace_question", ""), "created_at": int(time.time()),
+                })
+            except Exception as save_error:
+                app.logger.error("Could not save query failure %s: %s", trace.get("trace_id"), redact_diagnostic(cause_details(save_error)))
+        return jsonify(diagnostic), 422 if isinstance(exc, QueryFailure) else 500
     status = 400 if isinstance(exc, (ValueError, RuntimeError)) else 500
     message = str(exc) if status == 400 else "Error interno al procesar la petición. Inténtalo de nuevo."
     payload = request.get_json(silent=True) if request.is_json else None
@@ -182,7 +223,9 @@ def handle_error(exc):
             message = message.replace(secret, "[oculto]")
     if "conversation_id" in session:
         message = workspaces.redact_error(session["conversation_id"], message)
-    return jsonify({"ok": False, "error": message}), status
+    cause = redact_diagnostic(cause_details(exc))
+    app.logger.error("Talk to Data request failure: %s", redact_diagnostic("".join(traceback.format_exception(type(exc), exc, exc.__traceback__))))
+    return jsonify({"ok": False, "error": message, "cause": cause}), status
 
 
 @app.get("/")
@@ -316,11 +359,14 @@ def workspace_delete_chat(chat_id):
 
 @app.post("/api/workspace/chats/<chat_id>/ask")
 def workspace_ask(chat_id):
+    trace = begin_query_trace()
     payload = request.get_json(force=True)
     question = str(payload.get("question", "")).strip()
     if not question or len(question) > 2000:
         raise ValueError("Escribe una pregunta de hasta 2000 caracteres.")
     chat, connection, model = workspaces.binding(session["conversation_id"], chat_id)
+    g.trace_chat_id, g.trace_question = chat_id, question
+    trace.update(engine=connection["spec"].get("dialect") or connection["spec"].get("engine", ""), connection=connection["spec"].get("name", ""))
     language = response_language(payload)
     if "additional_context" in payload:
         chat = workspaces.set_instructions(session["conversation_id"], chat_id, payload["additional_context"])
@@ -328,13 +374,9 @@ def workspace_ask(chat_id):
     context = workspaces.chat(session["conversation_id"], chat_id)["messages"][-6:]
     def fail(stage, sql, exc):
         failure = QueryFailure(stage, sql, exc)
-        workspaces.add_message(session["conversation_id"], chat_id, {
-            "id": uuid.uuid4().hex[:10], "kind": "error", "question": question,
-            "error": str(failure), "cause": workspaces.redact_error(session["conversation_id"], cause_details(exc)),
-            "stage": stage, "sql": workspaces.redact_error(session["conversation_id"], sql), "created_at": int(time.time()),
-        })
         raise failure from exc
 
+    trace["stage"] = "generation"
     if model.get("built_in"):
         try:
             plan = demo_plan(question)
@@ -367,18 +409,25 @@ User preferences: {chat.get('instructions', '')}"""
             messages.append({"role": "assistant", "content": json.dumps(previous, ensure_ascii=False)})
         messages.append({"role": "user", "content": question})
         try:
-            plan = llm.parse_json(llm.complete(model["config"], messages, json_mode=True))
+            trace["model_response"] = llm.complete(model["config"], messages, json_mode=True)
+            plan = llm.parse_json(trace["model_response"])
         except Exception as exc:
             fail("generation", "", exc)
+    if model.get("built_in"):
+        trace["model_response"] = json.dumps(plan, ensure_ascii=False)
+    trace["stage"] = "validation"
     sql = str(plan.get("sql", ""))
+    trace["generated_sql"] = sql
     try:
         executed_sql = catalog.prepare_query_sql(sql)
     except Exception as exc:
         fail("validation", sql, exc)
     try:
+        trace.update(stage="execution", sql_sent=executed_sql)
         result = catalog.query(spec, executed_sql)
     except Exception as exc:
         fail("execution", executed_sql, exc)
+    trace["stage"] = "processing"
     response = {
         "id": uuid.uuid4().hex[:10], "question": question,
         "summary": summarize(question, result, plan.get("summary_hint"), {**payload, "model_language": language}),
@@ -395,11 +444,13 @@ User preferences: {chat.get('instructions', '')}"""
 
 @app.post("/api/ask")
 def ask():
+    trace = begin_query_trace()
     payload = request.get_json(force=True)
     question = str(payload.get("question", "")).strip()
     if not question:
         raise ValueError("Escribe una pregunta.")
     spec = selected_connection(payload)
+    trace.update(engine=spec.get("dialect") or spec.get("engine", ""), connection=spec.get("name", ""), stage="generation")
     tables = payload.get("tables", [])
     profiles = payload.get("profiles", [])
     if not tables or not profiles:
@@ -412,7 +463,7 @@ def ask():
         plan = demo_plan(question)
     else:
         dialect = {
-            "impala": "Impala SQL", "hive": "HiveQL", "cloudera": "Cloudera SQL (Impala/Hive)",
+            "impala": "Impala SQL", "hive": "HiveQL", "cloudera": "HiveQL" if spec.get("dialect") == "hive" else "Impala SQL",
             "trino": "Trino SQL", "postgresql": "PostgreSQL", "sqlite": "SQLite",
         }.get(spec["engine"], spec["engine"])
         system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
@@ -427,9 +478,17 @@ Editable context and user preferences (honor them unless they conflict with safe
             messages.append({"role": "user", "content": item["question"]})
             messages.append({"role": "assistant", "content": json.dumps({"sql": item["sql"], "summary": item["summary"]}, ensure_ascii=False)})
         messages.append({"role": "user", "content": question})
-        plan = llm.parse_json(llm.complete(payload.get("model", {}), messages, json_mode=True))
+        trace["model_response"] = llm.complete(payload.get("model", {}), messages, json_mode=True)
+        plan = llm.parse_json(trace["model_response"])
+    if not trace["model_response"]:
+        trace["model_response"] = json.dumps(plan, ensure_ascii=False)
+    trace["stage"] = "validation"
     sql = plan.get("sql", "")
+    trace["generated_sql"] = sql
+    sql = catalog.prepare_query_sql(sql)
+    trace.update(stage="execution", sql_sent=sql)
     result = catalog.query(spec, sql)
+    trace["stage"] = "processing"
     summary = summarize(question, result, plan.get("summary_hint"), payload)
     response = {
         "id": uuid.uuid4().hex[:10], "question": question, "summary": summary,
