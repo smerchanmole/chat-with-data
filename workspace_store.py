@@ -204,7 +204,7 @@ class WorkspaceStore:
         if not isinstance(tables, list) or not 1 <= len(tables) <= 12 or len(set(tables)) != len(tables) or not set(tables) <= set(available):
             raise ValueError("Selecciona entre 1 y 12 tablas de la base de datos elegida.")
         spec = dict(test["spec"])
-        if spec["engine"] == "postgresql":
+        if spec["engine"] in {"postgresql", "cloudera2"}:
             spec["active_database"] = database
         profiles = self.catalog.profile(spec, database, tables)
         item = {"id": self._id(), "label": label.strip(), "spec": spec, "database": database,
@@ -377,11 +377,13 @@ class WorkspaceStore:
             # can query the same unavailable connector and mask the first failure.
             space = self.sessions.get(session_id, {"connections": {}, "models": {}})
             secrets = list(extra_secrets)
-            for item in space["connections"].values():
+            connection_items = list(space["connections"].values()) + list(space.get("connection_tests", {}).values())
+            model_items = list(space["models"].values()) + list(space.get("model_tests", {}).values())
+            for item in connection_items:
                 spec = item.get("spec", {})
                 for key in ("password", "workload_password"):
                     secrets.append(spec.get(key))
-            for item in space["models"].values():
+            for item in model_items:
                 config = item.get("config", {})
                 for key in ("token", "api_key_value", "api_key_id"):
                     secrets.append(config.get(key))

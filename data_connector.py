@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import math
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ class DataCatalog:
     def databases(self, spec: dict[str, Any]) -> list[str]:
         if spec.get("demo") or spec.get("engine") == "sqlite":
             return ["demo"]
+        if spec.get("engine") == "cloudera2":
+            return [str(row[0]) for row in self._impala_rows(spec, "SHOW DATABASES")["rows"]]
         if spec.get("engine") == "postgresql":
             result = self._postgres_rows(
                 spec, spec.get("database", "postgres"),
@@ -76,6 +79,8 @@ class DataCatalog:
         if spec.get("jdbc_url"):
             return [row[0] for row in self._trino_rows(spec, f"SHOW TABLES FROM {database}")["rows"]]
         query = f"SHOW TABLES IN {database}"
+        if spec.get("engine") == "cloudera2":
+            return [str(row[0]) for row in self._impala_rows(spec, query)["rows"]]
         frame = self._cml_query(spec, query)
         return [str(row[0]) for row in frame.itertuples(index=False, name=None)]
 
@@ -108,6 +113,10 @@ class DataCatalog:
 
     def query(self, spec: dict[str, Any], sql: str, limit: int = 500) -> dict[str, Any]:
         bounded = self.prepare_query_sql(sql, limit)
+        if spec.get("engine") == "cloudera2":
+            result = self._impala_rows(spec, bounded)
+            rows = [dict(zip(result["columns"], row)) for row in result["rows"][:limit]]
+            return self._json_value({"columns": result["columns"], "rows": rows, "truncated": len(result["rows"]) >= limit})
         if spec.get("demo") or spec.get("engine") == "sqlite":
             with sqlite3.connect(self.demo_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -141,6 +150,35 @@ class DataCatalog:
         else:
             bounded = f"{bounded} LIMIT {int(limit)}"
         return bounded
+
+    @staticmethod
+    def _impala_rows(spec: dict[str, Any], sql: str):
+        from impala.dbapi import connect
+        conn = cursor = None
+        try:
+            kwargs = {"host": spec["host"], "port": spec.get("port", 443),
+                      "auth_mechanism": "PLAIN", "use_http_transport": True,
+                      "http_path": spec.get("http_path", "cliservice"), "use_ssl": True,
+                      "verify_cert": True, "timeout": 60,
+                      "user": spec["username"], "password": spec["password"]}
+            if spec.get("ca_cert"):
+                kwargs["ca_cert"] = spec["ca_cert"]
+            if spec.get("active_database"):
+                kwargs["database"] = spec["active_database"]
+            conn = connect(**kwargs)
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            return {"columns": [item[0] for item in cursor.description or []], "rows": cursor.fetchall()}
+        except Exception as exc:
+            raise RuntimeError(f"Impala directo ({spec['host']}): {exc}") from exc
+        finally:
+            for resource in (cursor, conn):
+                if resource is not None:
+                    try:
+                        resource.close()
+                    except Exception as exc:
+                        # Cleanup must not replace the original query error.
+                        logging.getLogger(__name__).warning("Impala cleanup failed (%s)", type(exc).__name__)
 
     @staticmethod
     def _cml_query(spec: dict[str, Any], sql: str):

@@ -243,6 +243,88 @@ class TalkToDataTests(unittest.TestCase):
         invalid = self.client.post("/api/workspace/connections/discover", json={"spec": {**spec, "auth_mode": "unknown"}})
         self.assertEqual(invalid.status_code, 400)
 
+    def test_direct_impala_discovery_profile_chat_and_restored_binding(self):
+        from workspace_store import WorkspaceStore
+        resources = []
+        queries = []
+        def new_connection(**kwargs):
+            conn, cursor = Mock(), Mock()
+            conn.cursor.return_value = cursor
+            def execute(sql):
+                queries.append(sql)
+                if sql == "SHOW DATABASES":
+                    cursor.description = [("database",)]
+                    cursor.fetchall.return_value = [("analytics",)]
+                elif sql == "SHOW TABLES IN analytics":
+                    cursor.description = [("table",)]
+                    cursor.fetchall.return_value = [("prices",)]
+                else:
+                    cursor.description = [("price",)]
+                    cursor.fetchall.return_value = [(Decimal("1.75"),)]
+            cursor.execute.side_effect = execute
+            resources.append((conn, cursor, kwargs))
+            return conn
+        spec = {"engine": "cloudera2", "host": "coordinator-vw.example.org", "username": "alice", "password": "direct-secret", "port": 443, "http_path": "cliservice"}
+        plan = json.dumps({"sql": "SELECT price FROM analytics.prices LIMIT 10", "title": "Precios", "chart": "bar"})
+        with patch("impala.dbapi.connect", side_effect=new_connection), \
+             patch.object(catalog, "_cml_query", side_effect=AssertionError("Direct Impala must not use CML")), \
+             patch.object(llm, "resolve", return_value=("https://model.test/v1/chat/completions", "test", {})), \
+             patch.object(llm, "complete", side_effect=["CONNECTED", "Perfil listo", plan]) as complete:
+            discovery = self.client.post("/api/workspace/connections/discover", json={"spec": spec}).get_json()["data"]
+            self.assertEqual(discovery["databases"], ["analytics"])
+            tables = self.client.post("/api/workspace/connections/tables", json={"ticket": discovery["ticket"], "database": "analytics"}).get_json()["data"]
+            self.assertEqual(tables, ["prices"])
+            saved = self.client.post("/api/workspace/connections", json={"ticket": discovery["ticket"], "label": "Impala directo", "database": "analytics", "tables": tables}).get_json()["data"]
+            tested = self.client.post("/api/workspace/models/test", json={"endpoint": "https://model.test/v1/chat/completions", "model": "test"}).get_json()["data"]
+            model = self.client.post("/api/workspace/models", json={"ticket": tested["ticket"], "label": "Modelo"}).get_json()["data"]
+            chat = self.client.post("/api/workspace/chats", json={"connection_id": saved["id"], "model_id": model["id"]}).get_json()["data"]
+            response = self.client.post(f"/api/workspace/chats/{chat['id']}/ask", json={"question": "Precio"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["rows"], [{"price": 1.75}])
+        self.assertIn("Impala SQL", complete.call_args.args[1][0]["content"])
+        self.assertNotIn("direct-secret", str(saved) + str(chat) + response.get_data(as_text=True))
+        for conn, cursor, kwargs in resources:
+            conn.close.assert_called_once()
+            cursor.close.assert_called_once()
+            self.assertEqual(kwargs["auth_mechanism"], "PLAIN")
+            self.assertTrue(kwargs["use_http_transport"])
+            self.assertTrue(kwargs["use_ssl"])
+            self.assertTrue(kwargs["verify_cert"])
+            self.assertEqual(kwargs["user"], "alice")
+            self.assertEqual(kwargs["password"], "direct-secret")
+        self.assertEqual(resources[-1][2]["database"], "analytics")
+        self.assertIn("SELECT * FROM analytics.prices LIMIT 100", queries)
+        with self.client.session_transaction() as current:
+            session_id = current["conversation_id"]
+        restarted = WorkspaceStore(catalog, llm, workspaces.db_path.parent)
+        _, restored, _ = restarted.binding(session_id, chat["id"])
+        self.assertEqual(restored["spec"]["engine"], "cloudera2")
+        self.assertEqual(restored["spec"]["password"], "direct-secret")
+        self.assertEqual(restored["spec"]["active_database"], "analytics")
+
+    def test_direct_impala_keeps_first_error_even_when_cleanup_fails(self):
+        spec = {"engine": "cloudera2", "host": "coordinator-vw.example.org", "username": "alice", "password": "secret", "ca_cert": "/runtime/ca.pem"}
+        conn, cursor = Mock(), Mock()
+        conn.cursor.return_value = cursor
+        cursor.execute.side_effect = RuntimeError("HTTP 401: Unauthorized")
+        cursor.close.side_effect = AttributeError("NoneType close")
+        with patch("impala.dbapi.connect", return_value=conn) as connect:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 401: Unauthorized"):
+                catalog.query(spec, "SELECT price FROM prices LIMIT 10")
+        self.assertEqual(connect.call_args.kwargs["ca_cert"], "/runtime/ca.pem")
+        conn.close.assert_called_once()
+        with patch("impala.dbapi.connect", side_effect=RuntimeError("Connection refused")):
+            with self.assertRaisesRegex(RuntimeError, "Connection refused"):
+                catalog.databases(spec)
+
+    def test_direct_impala_validates_configuration_before_connecting(self):
+        spec = {"engine": "cloudera2", "host": "coordinator-vw.example.org", "username": "alice", "password": "secret"}
+        for invalid in ({"host": "https://invalid/path"}, {"port": 0}, {"port": "bad"}, {"password": ""}, {"http_path": "path?bad"}):
+            with self.subTest(invalid=invalid), patch("impala.dbapi.connect") as connect:
+                response = self.client.post("/api/workspace/connections/discover", json={"spec": {**spec, **invalid}})
+                self.assertEqual(response.status_code, 400)
+                connect.assert_not_called()
+
     def test_model_requires_successful_test_before_save(self):
         config = {"endpoint":"https://model.example/v1/chat/completions", "model":"example/model", "auth_type":"jwt", "token":"secret"}
         self.assertEqual(self.client.post("/api/workspace/models", json={"ticket":"invalid", "label":"Modelo"}).status_code, 400)

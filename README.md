@@ -97,6 +97,35 @@ La conexión se abre para cada consulta y se cierra al terminar. Las conexiones 
 
 Rellena URL, base inicial, usuario y contraseña. Se aceptan `postgresql://…` y `jdbc:postgresql://…`, por ejemplo `postgresql://servidor:5432?sslmode=require`. Se descubren las bases accesibles y las tablas aparecen como `esquema.tabla`.
 
+### Cloudera 2 · Impala directo
+
+En **Conexiones → Tipo de conexión → Cloudera 2**, configura el **hostname** del coordinador (sin `https://` ni rutas), el **usuario** y su **contraseña**. El puerto inicial es **443** y la ruta HTTP inicial es **cliservice**; ambos son editables. Pulsa **Probar y descubrir bases**, elige la base y las tablas, y guarda la conexión para obtener su perfil. Después crea un chat con esa conexión y un modelo probado.
+
+Esta opción usa `impala.dbapi.connect` del paquete **impyla** directamente. No llama a `cml.data_v1.get_connection` ni utiliza el ticket Kerberos del runtime. El mecanismo se fija a `PLAIN` con transporte HTTP sobre TLS, reproduciendo el mecanismo del snippet del cliente. Los campos del formulario se pasan como parámetros, no se insertan en el código fuente:
+
+```python
+from impala.dbapi import connect
+
+conn = connect(
+    host=config["host"],
+    port=config.get("port", 443),
+    auth_mechanism="PLAIN",
+    use_http_transport=True,
+    http_path=config.get("http_path", "cliservice"),
+    use_ssl=True,
+    verify_cert=True,
+    timeout=60,
+    user=config["username"],
+    password=config["password"],
+)
+```
+
+La app verifica el certificado TLS del servidor. Si usa una CA interna que no está en el almacén de confianza del runtime, introduce en **Certificado CA** la ruta de su fichero PEM disponible dentro del runtime; la app lo pasa como `ca_cert`. [Referencia oficial de Impyla](https://github.com/cloudera/impyla).
+
+Cada operación abre su propia conexión y cierra cursor y conexión al terminar, incluso si falla. Los errores de cierre no sustituyen el fallo original. Las consultas del chat usan la base seleccionada y el dialecto **Impala SQL**; los resultados `Decimal` se normalizan igual que en el resto de conectores. La conexión y sus credenciales se guardan cifradas y el chat mantiene su asociación después de reiniciar. `impyla` se instala automáticamente al principio de `app.py`, sin lanzador `.sh`. Puede ejecutarse tanto en Cloudera como en local si el runtime tiene acceso al endpoint.
+
+**Cloudera** sigue siendo la opción para conexiones registradas y autenticación del runtime. **Cloudera 2** es la alternativa directa con usuario y contraseña. PostgreSQL y Trino siguen disponibles.
+
 ### Trino
 
 Pega la URL JDBC de tu virtual warehouse:

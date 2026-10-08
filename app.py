@@ -15,6 +15,7 @@ DEPENDENCIES = {
     "psycopg": "psycopg[binary]>=3.1,<4",
     "trino": "trino>=0.333,<1",
     "cryptography": "cryptography>=42,<47",
+    "impala": "impyla>=0.22,<1",
 }
 
 
@@ -129,6 +130,25 @@ def ok(data=None, **extra):
 def selected_connection(payload):
     direct = payload.get("connection_spec") or {}
     engine = str(direct.get("engine", "")).lower()
+    if engine == "cloudera2":
+        host = str(direct.get("host", "")).strip()
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", host):
+            raise ValueError("Indica el hostname de Impala, sin https:// ni rutas.")
+        try:
+            port = int(direct.get("port", 443))
+        except (ValueError, TypeError) as exc:
+            raise ValueError("El puerto debe ser un número entre 1 y 65535.") from exc
+        if not 1 <= port <= 65535:
+            raise ValueError("El puerto debe ser un número entre 1 y 65535.")
+        http_path = str(direct.get("http_path") or "cliservice").strip().lstrip("/")
+        if not re.fullmatch(r"[A-Za-z0-9_/.-]{1,200}", http_path):
+            raise ValueError("Indica una ruta HTTP válida para Impala.")
+        username, password = str(direct.get("username", "")).strip(), str(direct.get("password", ""))
+        if not username or not password:
+            raise ValueError("Completa el servidor, usuario y contraseña de Cloudera 2.")
+        return {"engine": "cloudera2", "name": host, "label": "Cloudera 2", "dialect": "impala",
+                "host": host, "port": port, "http_path": http_path, "username": username, "password": password,
+                "ca_cert": str(direct.get("ca_cert", "")).strip()}
     if engine == "postgresql":
         url = str(direct.get("url", "")).strip()
         database = str(direct.get("database", "")).strip()
@@ -377,7 +397,7 @@ def workspace_ask(chat_id):
         }
         plan["title"] = demo_titles.get(language, {}).get(plan["title"], plan["title"])
     else:
-        dialect = {"postgresql": "PostgreSQL", "trino": "Trino SQL", "cloudera": "HiveQL" if spec.get("dialect") == "hive" else "Impala SQL",
+        dialect = {"postgresql": "PostgreSQL", "trino": "Trino SQL", "cloudera2": "Impala SQL", "cloudera": "HiveQL" if spec.get("dialect") == "hive" else "Impala SQL",
                    "sqlite": "SQLite"}.get(spec["engine"], spec["engine"])
         system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
 Use only read-only {dialect}. Use only the supplied tables and columns. For SELECT/WITH, include LIMIT 500 or less. Never add LIMIT to SHOW, DESCRIBE or EXPLAIN.
@@ -448,7 +468,7 @@ def ask():
     else:
         dialect = {
             "impala": "Impala SQL", "hive": "HiveQL", "cloudera": "HiveQL" if spec.get("dialect") == "hive" else "Impala SQL",
-            "trino": "Trino SQL", "postgresql": "PostgreSQL", "sqlite": "SQLite",
+            "trino": "Trino SQL", "postgresql": "PostgreSQL", "sqlite": "SQLite", "cloudera2": "Impala SQL",
         }.get(spec["engine"], spec["engine"])
         system = f"""You are a data analyst. Return strict JSON with keys sql, title, summary_hint, chart.
 Use only read-only {dialect}. Use only the supplied schema. For SELECT/WITH, include LIMIT 500 or less. Never add LIMIT to SHOW, DESCRIBE or EXPLAIN.

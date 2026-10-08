@@ -100,6 +100,10 @@ class PersistenceTests(unittest.TestCase):
         self.store.sessions["browser-a"]["models"]["test"] = {"config": {"api_key_id": "a", "api_key_value": "1"}}
         self.assertEqual(self.store.redact_error("browser-a", source), source)
 
+    def test_pending_connection_credentials_are_redacted_before_saving(self):
+        self.store.discover_connection("browser-a", {"engine": "cloudera2", "host": "server.test", "password": "pending-private-secret"})
+        self.assertEqual(self.store.redact_error("browser-a", "Rejected pending-private-secret"), "Rejected [oculto]")
+
     def test_plaintext_history_is_migrated_without_losing_messages(self):
         chat = self.store.create_chat("browser-a", "demo", "demo")
         import json
